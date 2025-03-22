@@ -42,7 +42,6 @@ export async function POST(request: Request) {
     }
 
 }
-// const content = await sbx.files.read(path)
 
 export async function GET(request: NextRequest) {
 
