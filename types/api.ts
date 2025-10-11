@@ -2,12 +2,13 @@
  * Type definitions for Surf Computer API and SSE events
  */
 import { ComputerAction } from "@/types/anthropic";
+import { GeminiComputerAction } from "@/types/google";
 import { ResponseComputerToolCall } from "openai/resources/responses/responses.mjs";
 
 /**
  * Model types supported by Surf
  */
-export type ComputerModel = "openai" | "anthropic";
+export type ComputerModel = "openai" | "anthropic" | "google";
 
 /**
  * SSE event types for client communication
@@ -36,6 +37,8 @@ export interface ActionEvent<T extends ComputerModel> extends BaseSSEEvent {
   type: SSEEventType.ACTION;
   action: T extends "openai"
     ? ResponseComputerToolCall["action"]
+    : T extends "google"
+    ? GeminiComputerAction
     : ComputerAction;
 }
 

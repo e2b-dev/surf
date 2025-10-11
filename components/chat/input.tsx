@@ -15,7 +15,7 @@ import {
 } from "../ui/select";
 import { useChat } from "@/lib/chat-context";
 import { Input } from "../ui/input";
-import { AnthropicLogo } from "../icons";
+import { GoogleLogo } from "../icons";
 import { motion } from "motion/react";
 
 interface ChatInputProps {
@@ -50,26 +50,25 @@ export function ChatInput({
     <form onSubmit={onSubmit} className={cn(className)}>
       <div className="flex items-center">
         <div className="relative flex-1 flex items-center gap-2">
-          {/* CURRENTLY NOT USED */}
-          {/*  <Select value={model} onValueChange={setModel} disabled={disabled}>
+          <Select value={model} onValueChange={setModel} disabled={disabled}>
             <SelectTrigger
               className="absolute rounded-lg left-1.5 z-10 inset-y-1.5 border-border-200 w-min aspect-square h-auto flex items-center justify-center hover:bg-bg focus:bg-bg"
               withIcon={false}
             >
-              {model == "openai" ? (
+              {model === "openai" ? (
                 <OpenAiLogo className="size-5" />
-              ) : (
-                <AnthropicLogo className="size-5" />
-              )}
+              ) : model === "google" ? (
+                <GoogleLogo className="size-5" />
+              ) : null}
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
                 <SelectLabel>Model</SelectLabel>
                 <SelectItem value="openai">OpenAI</SelectItem>
-                <SelectItem value="anthropic">Anthropic</SelectItem>
+                <SelectItem value="google">Google Gemini</SelectItem>
               </SelectGroup>
             </SelectContent>
-          </Select> */}
+          </Select>
           <Input
             placeholder={placeholder}
             value={input}
@@ -77,7 +76,7 @@ export function ChatInput({
             autoFocus
             required
             disabled={disabled}
-            className="w-full pr-16"
+            className="w-full pl-16 pr-16"
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
             {isLoading ? (
