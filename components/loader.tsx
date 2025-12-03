@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 // Add this before the Button component
 const LOADER_VARIANTS = {
@@ -77,36 +77,42 @@ export const AssemblyLoader = ({
   const [block, setBlock] = useState<{ x: number; y: number } | null>(null);
 
   // Check if block can move down
-  const canMoveDown = (x: number, y: number) => {
-    if (y + 1 >= gridHeight) return false; // Bottom boundary
-    if (grid[y + 1][x]) return false; // Block below
-    return true;
-  };
+  const canMoveDown = useCallback(
+    (x: number, y: number) => {
+      if (y + 1 >= gridHeight) return false; // Bottom boundary
+      if (grid[y + 1][x]) return false; // Block below
+      return true;
+    },
+    [grid, gridHeight]
+  );
 
   // Check if block can move left
-  const canMoveLeft = (x: number, y: number) => {
-    if (x - 1 < 0) return false; // Left boundary
-    if (grid[y][x - 1]) return false; // Block to left
-    return true;
-  };
+  const canMoveLeft = useCallback(
+    (x: number, y: number) => {
+      if (x - 1 < 0) return false; // Left boundary
+      if (grid[y][x - 1]) return false; // Block to left
+      return true;
+    },
+    [grid]
+  );
 
   // Place block in grid
-  const placeBlock = (x: number, y: number) => {
+  const placeBlock = useCallback((x: number, y: number) => {
     setGrid((prev) => {
       const newGrid = prev.map((row) => [...row]);
       newGrid[y][x] = true;
       return newGrid;
     });
-  };
+  }, []);
 
   // Spawn new block - always at rightmost column
-  const spawnBlock = () => {
+  const spawnBlock = useCallback(() => {
     // Check if grid is completely full
     if (grid.every((row) => row.every((cell) => cell))) {
       return null;
     }
     return { x: gridWidth - 1, y: 0 };
-  };
+  }, [grid, gridWidth]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -136,7 +142,7 @@ export const AssemblyLoader = ({
     }, interval);
 
     return () => clearInterval(timer);
-  }, [interval, grid]);
+  }, [interval, canMoveDown, canMoveLeft, placeBlock, spawnBlock]);
 
   return (
     <div className={cn("h-fit w-fit whitespace-pre font-mono", className)}>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import {
   MoonIcon,
   SunIcon,
@@ -26,6 +26,29 @@ import Logo from "@/components/logo";
 import { RepoBanner } from "@/components/repo-banner";
 import { SANDBOX_TIMEOUT_MS } from "@/lib/config";
 import { Surfing } from "@/components/surfing";
+
+function ThemeToggle({
+  theme,
+  setTheme,
+}: {
+  theme: string | undefined;
+  setTheme: (theme: string) => void;
+}) {
+  return (
+    <Button
+      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+      variant="outline"
+      size="icon"
+      suppressHydrationWarning
+    >
+      {theme === "dark" ? (
+        <SunIcon className="h-5 w-5" suppressHydrationWarning />
+      ) : (
+        <MoonIcon className="h-5 w-5" suppressHydrationWarning />
+      )}
+    </Button>
+  );
+}
 
 export default function Home() {
   const [sandboxId, setSandboxId] = useState<string | null>(null);
@@ -57,9 +80,10 @@ export default function Home() {
       setIsTabVisible(document.visibilityState === "visible");
     };
 
-    setIsTabVisible(document.visibilityState === "visible");
-
+    // Initialize visibility state on mount via event listener
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    // Trigger initial check via the callback pattern
+    handleVisibilityChange();
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
@@ -87,7 +111,7 @@ export default function Home() {
     }
   };
 
-  const handleIncreaseTimeout = async () => {
+  const handleIncreaseTimeout = useCallback(async () => {
     if (!sandboxId) return;
 
     try {
@@ -98,7 +122,7 @@ export default function Home() {
       console.error("Failed to increase time:", error);
       toast.error("Failed to increase time");
     }
-  };
+  }, [sandboxId]);
 
   const onSubmit = (e: React.FormEvent) => {
     const content = handleSubmit(e);
@@ -149,21 +173,6 @@ export default function Home() {
     toast.success("Chat cleared");
   };
 
-  const ThemeToggle = () => (
-    <Button
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-      variant="outline"
-      size="icon"
-      suppressHydrationWarning
-    >
-      {theme === "dark" ? (
-        <SunIcon className="h-5 w-5" suppressHydrationWarning />
-      ) : (
-        <MoonIcon className="h-5 w-5" suppressHydrationWarning />
-      )}
-    </Button>
-  );
-
   useEffect(() => {
     if (!sandboxId) return;
     const interval = setInterval(() => {
@@ -178,18 +187,26 @@ export default function Home() {
     if (!sandboxId) return;
 
     if (timeRemaining === 10 && isTabVisible) {
-      handleIncreaseTimeout();
+      // Schedule async to avoid synchronous setState in effect
+      const timeoutId = setTimeout(() => {
+        handleIncreaseTimeout();
+      }, 0);
+      return () => clearTimeout(timeoutId);
     }
 
     if (timeRemaining === 0) {
-      setSandboxId(null);
-      setVncUrl(null);
-      clearMessages();
-      stopGeneration();
-      toast.error("Instance time expired");
-      setTimeRemaining(SANDBOX_TIMEOUT_MS / 1000);
+      // Schedule async to avoid synchronous setState in effect
+      const timeoutId = setTimeout(() => {
+        setSandboxId(null);
+        setVncUrl(null);
+        clearMessages();
+        stopGeneration();
+        toast.error("Instance time expired");
+        setTimeRemaining(SANDBOX_TIMEOUT_MS / 1000);
+      }, 0);
+      return () => clearTimeout(timeoutId);
     }
-  }, [timeRemaining, sandboxId, stopGeneration, clearMessages, isTabVisible]);
+  }, [timeRemaining, sandboxId, stopGeneration, clearMessages, isTabVisible, handleIncreaseTimeout]);
 
   useEffect(() => {
     onSandboxCreated((newSandboxId: string, newVncUrl: string) => {
@@ -240,7 +257,7 @@ export default function Home() {
           </div>
 
           <div className="hidden md:flex items-center gap-2">
-            <ThemeToggle />
+            <ThemeToggle theme={theme} setTheme={setTheme} />
             <RepoBanner />
 
             <AnimatePresence>
@@ -350,7 +367,7 @@ export default function Home() {
               transition={{ duration: 0.2 }}
             >
               <div className="flex items-center gap-2">
-                <ThemeToggle />
+                <ThemeToggle theme={theme} setTheme={setTheme} />
                 <RepoBanner />
               </div>
             </motion.div>
