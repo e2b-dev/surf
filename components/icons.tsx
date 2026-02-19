@@ -1,12 +1,19 @@
 import { cn } from "@/lib/utils";
 
-export const BotIcon = () => {
+export const BotIcon = ({
+  size = 16,
+  className,
+}: {
+  size?: number;
+  className?: string;
+}) => {
   return (
     <svg
-      height="16"
+      height={size}
+      width={size}
       strokeLinejoin="round"
       viewBox="0 0 16 16"
-      width="16"
+      className={className}
       style={{ color: "currentcolor" }}
     >
       <path
