@@ -1,6 +1,6 @@
 import { Sandbox } from "@e2b/desktop";
 import OpenAI from "openai";
-import { SSEEventType, SSEEvent } from "@/types/api";
+import { SSEEventType, SSEEvent, ComputerModel } from "@/types/api";
 import {
   ResponseComputerToolCall,
   ResponseInput,
@@ -15,12 +15,12 @@ import { ActionResponse } from "@/types/api";
 import { logDebug, logError, logWarning } from "../logger";
 import { ResolutionScaler } from "./resolution";
 
-const INSTRUCTIONS = `
+const INSTRUCTIONS = (providerName: string) => `
 You are Surf, a helpful assistant that can use a computer to help the user with their tasks.
 You can use the computer to search the web, write code, and more.
 
 Surf is built by E2B, which provides an open source isolated virtual computer in the cloud made for AI use cases.
-This application integrates E2B's desktop sandbox with OpenAI's API to create an AI agent that can perform tasks
+This application integrates E2B's desktop sandbox with ${providerName} to create an AI agent that can perform tasks
 on a virtual computer through natural language instructions.
 
 The screenshots that you receive are from a running sandbox instance, allowing you to see and interact with a real
@@ -52,14 +52,28 @@ export class OpenAIComputerStreamer
   public instructions: string;
   public desktop: Sandbox;
   public resolutionScaler: ResolutionScaler;
+  public model: string;
 
   private openai: OpenAI;
 
-  constructor(desktop: Sandbox, resolutionScaler: ResolutionScaler) {
+  constructor(
+    desktop: Sandbox,
+    resolutionScaler: ResolutionScaler,
+    options: {
+      baseURL?: string;
+      apiKey?: string;
+      model?: string;
+      providerName?: string;
+    } = {}
+  ) {
     this.desktop = desktop;
     this.resolutionScaler = resolutionScaler;
-    this.openai = new OpenAI();
-    this.instructions = INSTRUCTIONS;
+    this.model = options.model || "computer-use-preview";
+    this.openai = new OpenAI({
+      baseURL: options.baseURL,
+      apiKey: options.apiKey,
+    });
+    this.instructions = INSTRUCTIONS(options.providerName || "OpenAI's API");
   }
 
   async executeAction(
@@ -145,7 +159,7 @@ export class OpenAIComputerStreamer
 
   async *stream(
     props: ComputerInteractionStreamerFacadeStreamProps
-  ): AsyncGenerator<SSEEvent<"openai">> {
+  ): AsyncGenerator<SSEEvent<ComputerModel>> {
     const { messages, signal } = props;
 
     try {
@@ -161,7 +175,7 @@ export class OpenAIComputerStreamer
       };
 
       let response = await this.openai.responses.create({
-        model: "computer-use-preview",
+        model: this.model,
         tools: [computerTool],
         input: [...(messages as ResponseInput)],
         truncation: "auto",
@@ -245,7 +259,7 @@ export class OpenAIComputerStreamer
         };
 
         response = await this.openai.responses.create({
-          model: "computer-use-preview",
+          model: this.model,
           previous_response_id: response.id,
           instructions: this.instructions,
           tools: [computerTool],

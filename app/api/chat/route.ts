@@ -23,6 +23,13 @@ class StreamerFactory {
       case "anthropic":
       // currently not implemented
       /* return new AnthropicComputerStreamer(desktop, resolutionScaler); */
+      case "opencode":
+        return new OpenAIComputerStreamer(desktop, resolutionScaler, {
+          baseURL: "https://opencode.ai/zen/v1",
+          apiKey: process.env.OPENCODE_API_KEY,
+          model: "opencode/gpt-5-nano",
+          providerName: "OpenCode Zen",
+        });
       case "openai":
       default:
         return new OpenAIComputerStreamer(desktop, resolutionScaler);
@@ -42,7 +49,7 @@ export async function POST(request: Request) {
     messages,
     sandboxId,
     resolution,
-    model = "openai",
+    model = "opencode",
   } = await request.json();
 
   const apiKey = process.env.E2B_API_KEY;
