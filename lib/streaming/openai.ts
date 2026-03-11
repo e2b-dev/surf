@@ -2,6 +2,7 @@ import { Sandbox } from "@e2b/desktop";
 import OpenAI from "openai";
 import { SSEEventType, SSEEvent } from "@/types/api";
 import {
+  ComputerAction,
   ResponseComputerToolCall,
   ResponseInput,
   ResponseInputItem,
@@ -68,8 +69,8 @@ export class OpenAIComputerStreamer
     this.modelId = modelId;
   }
 
-  async executeAction(
-    action: ResponseComputerToolCall["action"]
+  async executeSingleAction(
+    action: NonNullable<ResponseComputerToolCall["action"]> | ComputerAction
   ): Promise<ActionResponse | void> {
     const desktop = this.desktop;
 
@@ -149,26 +150,48 @@ export class OpenAIComputerStreamer
     }
   }
 
+  async executeAction(
+    action: ResponseComputerToolCall["action"]
+  ): Promise<ActionResponse | void> {
+    if (!action) return;
+    return this.executeSingleAction(action);
+  }
+
+  async executeActions(
+    actions: ComputerAction[]
+  ): Promise<void> {
+    for (const action of actions) {
+      await this.executeSingleAction(action);
+    }
+  }
+
+  private buildTools(): Tool[] {
+    if (this.modelId === "gpt-5.4") {
+      return [{ type: "computer" }];
+    }
+
+    const modelResolution = this.resolutionScaler.getScaledResolution();
+    return [
+      {
+        type: "computer_use_preview",
+        display_width: modelResolution[0],
+        display_height: modelResolution[1],
+        environment: "linux",
+      },
+    ];
+  }
+
   async *stream(
     props: ComputerInteractionStreamerFacadeStreamProps
   ): AsyncGenerator<SSEEvent<"openai">> {
     const { messages, signal } = props;
 
     try {
-      const modelResolution = this.resolutionScaler.getScaledResolution();
-
-      const computerTool: Tool = {
-        // @ts-ignore
-        type: "computer_use_preview",
-        display_width: modelResolution[0],
-        display_height: modelResolution[1],
-        // @ts-ignore
-        environment: "linux",
-      };
+      const tools = this.buildTools();
 
       let response = await this.openai.responses.create({
         model: this.modelId,
-        tools: [computerTool],
+        tools,
         input: [...(messages as ResponseInput)],
         truncation: "auto",
         instructions: this.instructions,
@@ -204,7 +227,6 @@ export class OpenAIComputerStreamer
 
         const computerCall = computerCalls[0];
         const callId = computerCall.call_id;
-        const action = computerCall.action;
 
         const reasoningItems = response.output.filter(
           (item) => item.type === "message" && "content" in item
@@ -212,8 +234,6 @@ export class OpenAIComputerStreamer
 
         if (reasoningItems.length > 0 && "content" in reasoningItems[0]) {
           const content = reasoningItems[0].content;
-
-          // Log to debug why content is not a string
           logDebug("Reasoning content structure:", content);
 
           yield {
@@ -225,12 +245,18 @@ export class OpenAIComputerStreamer
           };
         }
 
-        yield {
-          type: SSEEventType.ACTION,
-          action,
-        };
+        const action = computerCall.action;
+        const actions = computerCall.actions;
 
-        await this.executeAction(action);
+        if (action) {
+          yield { type: SSEEventType.ACTION, action };
+          await this.executeSingleAction(action);
+        } else if (actions && actions.length > 0) {
+          for (const a of actions) {
+            yield { type: SSEEventType.ACTION, action: a as ResponseComputerToolCall["action"] };
+            await this.executeSingleAction(a);
+          }
+        }
 
         yield {
           type: SSEEventType.ACTION_COMPLETED,
@@ -244,8 +270,7 @@ export class OpenAIComputerStreamer
           call_id: callId,
           type: "computer_call_output",
           output: {
-            // @ts-ignore
-            type: "input_image",
+            type: "computer_screenshot",
             image_url: `data:image/png;base64,${newScreenshotBase64}`,
           },
         };
@@ -254,7 +279,7 @@ export class OpenAIComputerStreamer
           model: this.modelId,
           previous_response_id: response.id,
           instructions: this.instructions,
-          tools: [computerTool],
+          tools,
           input: [computerCallOutput],
           truncation: "auto",
           reasoning: {
@@ -266,7 +291,6 @@ export class OpenAIComputerStreamer
     } catch (error) {
       logError("OPENAI_STREAMER", error);
       if (error instanceof OpenAI.APIError && error.status === 429) {
-        // since hitting rate limits is not expected, we optimistically assume we hit our quota limit (both have the same status code)
         yield {
           type: SSEEventType.ERROR,
           content:
