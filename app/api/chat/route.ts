@@ -23,6 +23,8 @@ class StreamerFactory {
       case "anthropic":
       // currently not implemented
       /* return new AnthropicComputerStreamer(desktop, resolutionScaler); */
+      case "gpt-5.4":
+        return new OpenAIComputerStreamer(desktop, resolutionScaler, "gpt-5.4");
       case "openai":
       default:
         return new OpenAIComputerStreamer(desktop, resolutionScaler);
@@ -42,7 +44,7 @@ export async function POST(request: Request) {
     messages,
     sandboxId,
     resolution,
-    model = "openai",
+    model = "gpt-5.4",
   } = await request.json();
 
   const apiKey = process.env.E2B_API_KEY;

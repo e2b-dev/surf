@@ -54,12 +54,18 @@ export class OpenAIComputerStreamer
   public resolutionScaler: ResolutionScaler;
 
   private openai: OpenAI;
+  private modelId: string;
 
-  constructor(desktop: Sandbox, resolutionScaler: ResolutionScaler) {
+  constructor(
+    desktop: Sandbox,
+    resolutionScaler: ResolutionScaler,
+    modelId: string = "computer-use-preview"
+  ) {
     this.desktop = desktop;
     this.resolutionScaler = resolutionScaler;
     this.openai = new OpenAI();
     this.instructions = INSTRUCTIONS;
+    this.modelId = modelId;
   }
 
   async executeAction(
@@ -161,7 +167,7 @@ export class OpenAIComputerStreamer
       };
 
       let response = await this.openai.responses.create({
-        model: "computer-use-preview",
+        model: this.modelId,
         tools: [computerTool],
         input: [...(messages as ResponseInput)],
         truncation: "auto",
@@ -245,7 +251,7 @@ export class OpenAIComputerStreamer
         };
 
         response = await this.openai.responses.create({
-          model: "computer-use-preview",
+          model: this.modelId,
           previous_response_id: response.id,
           instructions: this.instructions,
           tools: [computerTool],
