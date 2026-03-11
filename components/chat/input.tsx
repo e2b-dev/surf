@@ -1,8 +1,7 @@
 "use client";
 
 import React, { useMemo } from "react";
-import { OpenAiLogo, Sparkle } from "@phosphor-icons/react";
-import { ChevronsRight, StopCircle } from "lucide-react";
+import { ChevronsRight, StopCircle, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -16,8 +15,13 @@ import {
 import { useChat } from "@/lib/chat-context";
 import { ComputerModel } from "@/types/api";
 import { Input } from "../ui/input";
-import { AnthropicLogo } from "../icons";
 import { motion } from "motion/react";
+
+const MODEL_LABELS: Record<ComputerModel, string> = {
+  "gpt-5.4": "GPT-5.4",
+  openai: "OpenAI CUA",
+  anthropic: "Anthropic",
+};
 
 interface ChatInputProps {
   input: string;
@@ -49,34 +53,31 @@ export function ChatInput({
 
   return (
     <form onSubmit={onSubmit} className={cn(className)}>
-      <div className="flex items-center">
-        <div className="relative flex-1 flex items-center gap-2">
-          <Select
-            value={model}
-            onValueChange={(v) => setModel(v as ComputerModel)}
-            disabled={disabled}
+      <div className="flex flex-col gap-1.5">
+        <Select
+          value={model}
+          onValueChange={(v) => setModel(v as ComputerModel)}
+          disabled={disabled}
+        >
+          <SelectTrigger
+            className="w-fit h-auto px-2 py-1 rounded-md border-none bg-transparent hover:bg-bg-200 text-fg-300 hover:text-fg gap-1"
+            withIcon={false}
           >
-            <SelectTrigger
-              className="absolute rounded-lg left-1.5 z-10 inset-y-1.5 border-border-200 w-min aspect-square h-auto flex items-center justify-center hover:bg-bg focus:bg-bg"
-              withIcon={false}
-            >
-              {model === "gpt-5.4" ? (
-                <Sparkle className="size-5" weight="fill" />
-              ) : model === "openai" ? (
-                <OpenAiLogo className="size-5" />
-              ) : (
-                <AnthropicLogo className="size-5" />
-              )}
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectLabel>Model</SelectLabel>
-                <SelectItem value="gpt-5.4">GPT-5.4</SelectItem>
-                <SelectItem value="openai">OpenAI CUA</SelectItem>
-                <SelectItem value="anthropic">Anthropic</SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+            <span className="text-xs font-mono tracking-wide">
+              {MODEL_LABELS[model]}
+            </span>
+            <ChevronDown className="size-3 text-fg-400" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectLabel>Model</SelectLabel>
+              <SelectItem value="gpt-5.4">GPT-5.4</SelectItem>
+              <SelectItem value="openai">OpenAI CUA</SelectItem>
+              <SelectItem value="anthropic">Anthropic</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        <div className="relative flex items-center">
           <Input
             placeholder={placeholder}
             value={input}
@@ -84,7 +85,7 @@ export function ChatInput({
             autoFocus
             required
             disabled={disabled}
-            className="w-full pl-12 pr-16"
+            className="w-full pr-16"
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
             {isLoading ? (
