@@ -45,7 +45,7 @@ Before starting, you'll need:
 
 1. [Node.js](https://nodejs.org/) (version specified in package.json)
 2. [npm](https://www.npmjs.com/) (comes with Node.js)
-3. An [E2B API key](https://e2b.dev/docs/getting-started/api-key)
+3. An [E2B API key](https://e2b.dev/docs/api-key)
 4. An [OpenAI API key](https://platform.openai.com/api-keys)
 
 ## Setup Instructions
