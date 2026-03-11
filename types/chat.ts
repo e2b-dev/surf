@@ -50,7 +50,7 @@ export interface SystemChatMessage extends BaseChatMessage {
 export interface ActionChatMessage<T extends ComputerModel = ComputerModel>
   extends BaseChatMessage {
   role: "action";
-  action: T extends "openai"
+  action: T extends "openai" | "gpt-5.4"
     ? ResponseComputerToolCall["action"]
     : ComputerAction;
   status?: "pending" | "completed" | "failed";

@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { useChat } from "@/lib/chat-context";
 import { Badge } from "../ui/badge";
-import { OpenAiLogo } from "@phosphor-icons/react";
+import { OpenAiLogo, Sparkle } from "@phosphor-icons/react";
 import { AnthropicLogo } from "../icons";
 
 const messageVariants = cva("", {
@@ -130,7 +130,10 @@ export function ChatMessage({ message, className }: ChatMessageProps) {
   const getRoleIcon = () => {
     if (isUser) return <User className="h-3 w-3" />;
     if (isAssistant) {
-      if ((message as AssistantChatMessage).model === "openai") {
+      const msgModel = (message as AssistantChatMessage).model;
+      if (msgModel === "gpt-5.4") {
+        return <Sparkle className="h-3 w-3" weight="fill" />;
+      } else if (msgModel === "openai") {
         return <OpenAiLogo className="h-3 w-3" />;
       } else {
         return <AnthropicLogo className="h-3 w-3" />;
