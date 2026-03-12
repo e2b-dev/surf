@@ -99,6 +99,11 @@ interface ScreenshotAction extends ComputerActionBase {
   action: "screenshot";
 }
 
+interface ZoomAction extends ComputerActionBase {
+  action: "zoom";
+  region: [number, number, number, number]; // [x1, y1, x2, y2]
+}
+
 export type ComputerAction =
   | KeyAction
   | HoldKeyAction
@@ -115,7 +120,8 @@ export type ComputerAction =
   | TripleClickAction
   | ScrollAction
   | WaitAction
-  | ScreenshotAction;
+  | ScreenshotAction
+  | ZoomAction;
 
 interface TextEditorCommandBase {
   command: string;
@@ -144,16 +150,11 @@ interface InsertCommand extends TextEditorCommandBase {
   new_str: string;
 }
 
-interface UndoEditCommand extends TextEditorCommandBase {
-  command: "undo_edit";
-}
-
 export type TextEditorCommand =
   | ViewCommand
   | CreateCommand
   | StrReplaceCommand
-  | InsertCommand
-  | UndoEditCommand;
+  | InsertCommand;
 
 export type BashCommand =
   | {

@@ -11,9 +11,9 @@ import {
   BetaToolResultBlockParam,
   BetaToolUseBlock,
 } from "@anthropic-ai/sdk/resources/beta/messages/messages.mjs";
-import { ResolutionScaler } from "./resolution";
 import { ComputerAction, ToolInput } from "@/types/anthropic";
 import { logError } from "../logger";
+import { ANTHROPIC_MODEL } from "../config";
 
 const INSTRUCTIONS = `
 You are Surf, a helpful assistant that can use a computer to help the user with their tasks.
@@ -46,16 +46,16 @@ export class AnthropicComputerStreamer
 {
   public instructions: string;
   public desktop: Sandbox;
-  public resolutionScaler: ResolutionScaler;
+  public resolution: [number, number];
   private anthropic: Anthropic;
 
-  constructor(desktop: Sandbox, resolutionScaler: ResolutionScaler) {
+  constructor(desktop: Sandbox, resolution: [number, number]) {
     if (!process.env.ANTHROPIC_API_KEY) {
       throw new Error("ANTHROPIC_API_KEY is not set");
     }
 
     this.desktop = desktop;
-    this.resolutionScaler = resolutionScaler;
+    this.resolution = resolution;
     this.anthropic = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY,
     });
@@ -97,14 +97,11 @@ export class AnthropicComputerStreamer
 
     switch (action.action) {
       case "screenshot": {
-        // that explicit screenshot actions are no longer necessary
         break;
       }
 
       case "double_click": {
-        const [x, y] = this.resolutionScaler.scaleToOriginalSpace(
-          action.coordinate
-        );
+        const [x, y] = action.coordinate;
         if (action.text) {
           await desktop.moveMouse(x, y);
           await desktop.press(action.text);
@@ -114,9 +111,7 @@ export class AnthropicComputerStreamer
       }
 
       case "triple_click": {
-        const [x, y] = this.resolutionScaler.scaleToOriginalSpace(
-          action.coordinate
-        );
+        const [x, y] = action.coordinate;
 
         await desktop.moveMouse(x, y);
         if (action.text) {
@@ -129,9 +124,7 @@ export class AnthropicComputerStreamer
       }
 
       case "left_click": {
-        const [x, y] = this.resolutionScaler.scaleToOriginalSpace(
-          action.coordinate
-        );
+        const [x, y] = action.coordinate;
 
         if (action.text) {
           await desktop.moveMouse(x, y);
@@ -142,9 +135,7 @@ export class AnthropicComputerStreamer
       }
 
       case "right_click": {
-        const [x, y] = this.resolutionScaler.scaleToOriginalSpace(
-          action.coordinate
-        );
+        const [x, y] = action.coordinate;
 
         if (action.text) {
           await desktop.moveMouse(x, y);
@@ -155,9 +146,7 @@ export class AnthropicComputerStreamer
       }
 
       case "middle_click": {
-        const [x, y] = this.resolutionScaler.scaleToOriginalSpace(
-          action.coordinate
-        );
+        const [x, y] = action.coordinate;
 
         if (action.text) {
           await desktop.moveMouse(x, y);
@@ -183,10 +172,7 @@ export class AnthropicComputerStreamer
       }
 
       case "mouse_move": {
-        const [x, y] = this.resolutionScaler.scaleToOriginalSpace(
-          action.coordinate
-        );
-
+        const [x, y] = action.coordinate;
         await desktop.moveMouse(x, y);
         break;
       }
@@ -200,21 +186,14 @@ export class AnthropicComputerStreamer
       }
 
       case "left_click_drag": {
-        const start = this.resolutionScaler.scaleToOriginalSpace(
-          action.start_coordinate
-        );
-        const end = this.resolutionScaler.scaleToOriginalSpace(
-          action.coordinate
-        );
-
+        const start = action.start_coordinate;
+        const end = action.coordinate;
         await desktop.drag(start, end);
         break;
       }
 
       case "scroll": {
-        const [x, y] = this.resolutionScaler.scaleToOriginalSpace(
-          action.coordinate
-        );
+        const [x, y] = action.coordinate;
 
         const direction = action.scroll_direction;
         const amount = action.scroll_amount;
@@ -235,6 +214,11 @@ export class AnthropicComputerStreamer
       }
 
       case "cursor_position": {
+        break;
+      }
+
+      case "zoom": {
+        // zoom action requests a high-res view of a region — no desktop action needed
         break;
       }
 
@@ -263,26 +247,29 @@ export class AnthropicComputerStreamer
           break;
         }
 
-        const modelResolution = this.resolutionScaler.getScaledResolution();
-
-        const response = await this.anthropic.beta.messages.create({
-          model: "claude-3-7-sonnet-latest",
+        // SDK types don't yet include computer_20251124 / text_editor_20250728 tool versions
+        const response = await (this.anthropic.beta.messages.create as Function)({
+          model: ANTHROPIC_MODEL,
           max_tokens: 4096,
           messages: anthropicMessages,
           system: this.instructions,
           tools: [
             {
-              type: "computer_20250124",
+              type: "computer_20251124",
               name: "computer",
-              display_width_px: modelResolution[0],
-              display_height_px: modelResolution[1],
+              display_width_px: this.resolution[0],
+              display_height_px: this.resolution[1],
+            },
+            {
+              type: "text_editor_20250728",
+              name: "str_replace_editor",
             },
             {
               type: "bash_20250124",
               name: "bash",
             },
           ],
-          betas: ["computer-use-2025-01-24"],
+          betas: ["computer-use-2025-11-24"],
           thinking: { type: "enabled", budget_tokens: 1024 },
         });
 
@@ -336,8 +323,7 @@ export class AnthropicComputerStreamer
             type: SSEEventType.ACTION_COMPLETED,
           };
 
-          // Always take a screenshot after each action
-          const screenshotData = await this.resolutionScaler.takeScreenshot();
+          const screenshotData = await this.desktop.screenshot();
           const screenshotBase64 =
             Buffer.from(screenshotData).toString("base64");
 

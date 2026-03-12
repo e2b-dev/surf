@@ -6,8 +6,8 @@ import {
 } from "@/lib/streaming";
 import { SANDBOX_TIMEOUT_MS } from "@/lib/config";
 import { OpenAIComputerStreamer } from "@/lib/streaming/openai";
+// import { AnthropicComputerStreamer } from "@/lib/streaming/anthropic";
 import { logError } from "@/lib/logger";
-import { ResolutionScaler } from "@/lib/streaming/resolution";
 
 export const maxDuration = 800;
 
@@ -17,15 +17,12 @@ class StreamerFactory {
     desktop: Sandbox,
     resolution: [number, number]
   ): ComputerInteractionStreamerFacade {
-    const resolutionScaler = new ResolutionScaler(desktop, resolution);
-
     switch (model) {
-      case "anthropic":
-      // currently not implemented
-      /* return new AnthropicComputerStreamer(desktop, resolutionScaler); */
+      // case "anthropic":
+      //   return new AnthropicComputerStreamer(desktop, resolution);
       case "openai":
       default:
-        return new OpenAIComputerStreamer(desktop, resolutionScaler);
+        return new OpenAIComputerStreamer(desktop, resolution);
     }
   }
 }

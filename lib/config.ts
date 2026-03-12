@@ -12,3 +12,7 @@ export const MIN_RESOLUTION_HEIGHT = 480;
 // NOTE: This should be within the max/min bounds defined above,
 // otherwise it will be scaled automatically
 export const DEFAULT_RESOLUTION: [number, number] = [1024, 720];
+
+// Model identifiers
+export const ANTHROPIC_MODEL = "claude-sonnet-4-6";
+export const OPENAI_MODEL = "gpt-5.4";

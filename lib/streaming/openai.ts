@@ -13,7 +13,7 @@ import {
 } from "@/lib/streaming";
 import { ActionResponse } from "@/types/api";
 import { logDebug, logError, logWarning } from "../logger";
-import { ResolutionScaler } from "./resolution";
+import { OPENAI_MODEL } from "../config";
 
 const INSTRUCTIONS = `
 You are Surf, a helpful assistant that can use a computer to help the user with their tasks.
@@ -51,13 +51,13 @@ export class OpenAIComputerStreamer
 {
   public instructions: string;
   public desktop: Sandbox;
-  public resolutionScaler: ResolutionScaler;
+  public resolution: [number, number];
 
   private openai: OpenAI;
 
-  constructor(desktop: Sandbox, resolutionScaler: ResolutionScaler) {
+  constructor(desktop: Sandbox, resolution: [number, number]) {
     this.desktop = desktop;
-    this.resolutionScaler = resolutionScaler;
+    this.resolution = resolution;
     this.openai = new OpenAI();
     this.instructions = INSTRUCTIONS;
   }
@@ -72,26 +72,16 @@ export class OpenAIComputerStreamer
         break;
       }
       case "double_click": {
-        const coordinate = this.resolutionScaler.scaleToOriginalSpace([
-          action.x,
-          action.y,
-        ]);
-
-        await desktop.doubleClick(coordinate[0], coordinate[1]);
+        await desktop.doubleClick(action.x, action.y);
         break;
       }
       case "click": {
-        const coordinate = this.resolutionScaler.scaleToOriginalSpace([
-          action.x,
-          action.y,
-        ]);
-
         if (action.button === "left") {
-          await desktop.leftClick(coordinate[0], coordinate[1]);
+          await desktop.leftClick(action.x, action.y);
         } else if (action.button === "right") {
-          await desktop.rightClick(coordinate[0], coordinate[1]);
+          await desktop.rightClick(action.x, action.y);
         } else if (action.button === "wheel") {
-          await desktop.middleClick(coordinate[0], coordinate[1]);
+          await desktop.middleClick(action.x, action.y);
         }
         break;
       }
@@ -104,12 +94,7 @@ export class OpenAIComputerStreamer
         break;
       }
       case "move": {
-        const coordinate = this.resolutionScaler.scaleToOriginalSpace([
-          action.x,
-          action.y,
-        ]);
-
-        await desktop.moveMouse(coordinate[0], coordinate[1]);
+        await desktop.moveMouse(action.x, action.y);
         break;
       }
       case "scroll": {
@@ -124,15 +109,14 @@ export class OpenAIComputerStreamer
         break;
       }
       case "drag": {
-        const startCoordinate = this.resolutionScaler.scaleToOriginalSpace([
+        const startCoordinate: [number, number] = [
           action.path[0].x,
           action.path[0].y,
-        ]);
-
-        const endCoordinate = this.resolutionScaler.scaleToOriginalSpace([
+        ];
+        const endCoordinate: [number, number] = [
           action.path[1].x,
           action.path[1].y,
-        ]);
+        ];
 
         await desktop.drag(startCoordinate, endCoordinate);
         break;
@@ -149,26 +133,19 @@ export class OpenAIComputerStreamer
     const { messages, signal } = props;
 
     try {
-      const modelResolution = this.resolutionScaler.getScaledResolution();
-
-      const computerTool: Tool = {
-        // @ts-ignore
-        type: "computer_use_preview",
-        display_width: modelResolution[0],
-        display_height: modelResolution[1],
-        // @ts-ignore
-        environment: "linux",
-      };
+      // GPT-5.4 GA "computer" tool infers display dimensions from the screenshot
+      const computerTool = {
+        type: "computer" as const,
+      } as unknown as Tool;
 
       let response = await this.openai.responses.create({
-        model: "computer-use-preview",
+        model: OPENAI_MODEL,
         tools: [computerTool],
         input: [...(messages as ResponseInput)],
         truncation: "auto",
         instructions: this.instructions,
         reasoning: {
           effort: "medium",
-          generate_summary: "concise",
         },
       });
 
@@ -196,10 +173,7 @@ export class OpenAIComputerStreamer
           break;
         }
 
-        const computerCall = computerCalls[0];
-        const callId = computerCall.call_id;
-        const action = computerCall.action;
-
+        // Emit reasoning before actions
         const reasoningItems = response.output.filter(
           (item) => item.type === "message" && "content" in item
         );
@@ -207,7 +181,6 @@ export class OpenAIComputerStreamer
         if (reasoningItems.length > 0 && "content" in reasoningItems[0]) {
           const content = reasoningItems[0].content;
 
-          // Log to debug why content is not a string
           logDebug("Reasoning content structure:", content);
 
           yield {
@@ -219,48 +192,59 @@ export class OpenAIComputerStreamer
           };
         }
 
-        yield {
-          type: SSEEventType.ACTION,
-          action,
-        };
+        // Process all computer calls in this turn (GPT-5.4 supports batched actions)
+        const callOutputs: ResponseInputItem[] = [];
 
-        await this.executeAction(action);
+        for (const computerCall of computerCalls) {
+          const callId = computerCall.call_id;
 
-        yield {
-          type: SSEEventType.ACTION_COMPLETED,
-        };
+          // GPT-5.4 uses "actions" (array), older models use "action" (single)
+          const actions = (computerCall as any).actions ?? [computerCall.action];
 
-        const newScreenshotData = await this.resolutionScaler.takeScreenshot();
-        const newScreenshotBase64 =
-          Buffer.from(newScreenshotData).toString("base64");
+          for (const action of actions) {
+            if (!action) continue;
 
-        const computerCallOutput: ResponseInputItem = {
-          call_id: callId,
-          type: "computer_call_output",
-          output: {
-            // @ts-ignore
-            type: "input_image",
-            image_url: `data:image/png;base64,${newScreenshotBase64}`,
-          },
-        };
+            yield {
+              type: SSEEventType.ACTION,
+              action,
+            };
+
+            await this.executeAction(action);
+
+            yield {
+              type: SSEEventType.ACTION_COMPLETED,
+            };
+          }
+
+          const screenshotData = await this.desktop.screenshot();
+          const screenshotBase64 =
+            Buffer.from(screenshotData).toString("base64");
+
+          callOutputs.push({
+            call_id: callId,
+            type: "computer_call_output",
+            output: {
+              type: "computer_screenshot",
+              image_url: `data:image/png;base64,${screenshotBase64}`,
+            },
+          });
+        }
 
         response = await this.openai.responses.create({
-          model: "computer-use-preview",
+          model: OPENAI_MODEL,
           previous_response_id: response.id,
           instructions: this.instructions,
           tools: [computerTool],
-          input: [computerCallOutput],
+          input: callOutputs,
           truncation: "auto",
           reasoning: {
             effort: "medium",
-            generate_summary: "concise",
-          },
+            },
         });
       }
     } catch (error) {
       logError("OPENAI_STREAMER", error);
       if (error instanceof OpenAI.APIError && error.status === 429) {
-        // since hitting rate limits is not expected, we optimistically assume we hit our quota limit (both have the same status code)
         yield {
           type: SSEEventType.ERROR,
           content:
