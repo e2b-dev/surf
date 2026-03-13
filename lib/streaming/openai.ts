@@ -47,7 +47,7 @@ The sandbox is based on Ubuntu 22.04 and comes with many pre-installed applicati
 const TYPE_ACTION_CHUNK_SIZE = 50;
 const TYPE_ACTION_DELAY_MS = 25;
 const INTERSTITIAL_WAIT_DELAY_MS = 800;
-const ASYNC_BATCH_FALLBACK_DELAY_MS = 300;
+const ASYNC_BATCH_FALLBACK_DELAY_MS = 100;
 
 type CapturedScreenshot = {
   base64: string;
