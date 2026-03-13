@@ -335,7 +335,7 @@ export class OpenAIComputerStreamer
 
   async *stream(
     props: ComputerInteractionStreamerFacadeStreamProps
-  ): AsyncGenerator<SSEEvent<"openai">> {
+  ): AsyncGenerator<SSEEvent> {
     const { messages, signal } = props;
     const traceId = `openai-${Date.now()}-${Math.random()
       .toString(36)

@@ -1,31 +1,14 @@
 import { Sandbox } from "@e2b/desktop";
-import { ComputerModel, SSEEvent, SSEEventType } from "@/types/api";
+import { SSEEvent, SSEEventType } from "@/types/api";
 import {
   ComputerInteractionStreamerFacade,
   createStreamingResponse,
 } from "@/lib/streaming";
 import { SANDBOX_TIMEOUT_MS } from "@/lib/config";
 import { OpenAIComputerStreamer } from "@/lib/streaming/openai";
-// import { AnthropicComputerStreamer } from "@/lib/streaming/anthropic";
 import { logError } from "@/lib/logger";
 
 export const maxDuration = 800;
-
-class StreamerFactory {
-  static getStreamer(
-    model: ComputerModel,
-    desktop: Sandbox,
-    resolution: [number, number]
-  ): ComputerInteractionStreamerFacade {
-    switch (model) {
-      // case "anthropic":
-      //   return new AnthropicComputerStreamer(desktop, resolution);
-      case "openai":
-      default:
-        return new OpenAIComputerStreamer(desktop, resolution);
-    }
-  }
-}
 
 export async function POST(request: Request) {
   const abortController = new AbortController();
@@ -39,7 +22,6 @@ export async function POST(request: Request) {
     messages,
     sandboxId,
     resolution,
-    model = "openai",
   } = await request.json();
 
   const apiKey = process.env.E2B_API_KEY;
@@ -76,14 +58,11 @@ export async function POST(request: Request) {
     desktop.setTimeout(SANDBOX_TIMEOUT_MS);
 
     try {
-      const streamer = StreamerFactory.getStreamer(
-        model as ComputerModel,
-        desktop,
-        resolution
-      );
+      const streamer: ComputerInteractionStreamerFacade =
+        new OpenAIComputerStreamer(desktop, resolution);
 
       if (!sandboxId && activeSandboxId && vncUrl) {
-        async function* stream(): AsyncGenerator<SSEEvent<typeof model>> {
+        async function* stream(): AsyncGenerator<SSEEvent> {
           yield {
             type: SSEEventType.SANDBOX_CREATED,
             sandboxId: activeSandboxId,

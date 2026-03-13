@@ -1,8 +1,7 @@
 /**
  * Type definitions for chat messages and related functionality
  */
-import { ActionEvent, ComputerModel, SSEEventType } from "./api";
-import { ComputerAction } from "@/types/anthropic";
+import { ActionEvent, SSEEventType } from "./api";
 import { OpenAIComputerAction } from "@/types/openai";
 
 /**
@@ -32,7 +31,6 @@ export interface UserChatMessage extends BaseChatMessage {
 export interface AssistantChatMessage extends BaseChatMessage {
   role: "assistant";
   content: string;
-  model: ComputerModel;
 }
 
 /**
@@ -47,23 +45,21 @@ export interface SystemChatMessage extends BaseChatMessage {
 /**
  * Action message in the chat
  */
-export interface ActionChatMessage<T extends ComputerModel = ComputerModel>
-  extends BaseChatMessage {
+export interface ActionChatMessage extends BaseChatMessage {
   role: "action";
-  action: T extends "openai" ? OpenAIComputerAction : ComputerAction;
+  action: OpenAIComputerAction;
   repeatCount?: number;
   status?: "pending" | "completed" | "failed";
-  model: ComputerModel;
 }
 
 /**
  * Union type for all chat messages
  */
-export type ChatMessage<T extends ComputerModel = "openai"> =
+export type ChatMessage =
   | UserChatMessage
   | AssistantChatMessage
   | SystemChatMessage
-  | ActionChatMessage<T>;
+  | ActionChatMessage;
 
 /**
  * Chat state interface
@@ -77,10 +73,10 @@ export interface ChatState {
 /**
  * Parsed SSE event from the server
  */
-export interface ParsedSSEEvent<T extends ComputerModel> {
+export interface ParsedSSEEvent {
   type: SSEEventType;
   content?: any;
-  action?: ActionEvent<T>["action"];
+  action?: ActionEvent["action"];
   callId?: string;
   sandboxId?: string;
   vncUrl?: string;
@@ -94,7 +90,6 @@ export interface ChatApiRequest {
   sandboxId?: string;
   environment?: string;
   resolution: [number, number];
-  model?: ComputerModel;
 }
 
 /**
@@ -105,5 +100,4 @@ export interface SendMessageOptions {
   sandboxId?: string;
   environment?: string;
   resolution: [number, number];
-  model?: ComputerModel;
 }

@@ -17,7 +17,7 @@ import {
   AssistantChatMessage,
   SystemChatMessage,
 } from "@/types/chat";
-import { ComputerModel, SSEEventType } from "@/types/api";
+import { SSEEventType } from "@/types/api";
 import { logDebug, logError } from "./logger";
 
 interface ChatContextType extends ChatState {
@@ -30,8 +30,6 @@ interface ChatContextType extends ChatState {
   onSandboxCreated: (
     callback: (sandboxId: string, vncUrl: string) => void
   ) => void;
-  model: ComputerModel;
-  setModel: (model: ComputerModel) => void;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -49,9 +47,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const onSandboxCreatedRef = useRef<
     ((sandboxId: string, vncUrl: string) => void) | undefined
   >(undefined);
-  const [model, setModel] = useState<ComputerModel>("openai");
 
-  const parseSSEEvent = (data: string): ParsedSSEEvent<typeof model> | null => {
+  const parseSSEEvent = (data: string): ParsedSSEEvent | null => {
     try {
       if (!data || data.trim() === "") {
         return null;
@@ -125,7 +122,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
           sandboxId,
           environment,
           resolution,
-          model,
         }),
         signal: abortControllerRef.current.signal,
       });
@@ -195,20 +191,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
             case SSEEventType.ACTION:
               if (parsedEvent.action) {
                 const incomingAction = parsedEvent.action;
-                const actionMessage: ActionChatMessage<typeof model> = {
+                const actionMessage: ActionChatMessage = {
                   role: "action",
                   id: `action-${Date.now()}`,
                   action: incomingAction,
                   repeatCount: 1,
                   status: "pending",
-                  model,
                 };
 
                 setMessages((prev) => {
-                  const isOpenAIWaitAction =
-                    model === "openai" &&
-                    "type" in incomingAction &&
-                    incomingAction.type === "wait";
+                  const isOpenAIWaitAction = incomingAction.type === "wait";
 
                   if (!isOpenAIWaitAction) {
                     return [...prev, actionMessage];
@@ -219,20 +211,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
                     return [...prev, actionMessage];
                   }
 
-                  const lastActionMessage = lastMessage as ActionChatMessage<
-                    typeof model
-                  >;
+                  const lastActionMessage = lastMessage as ActionChatMessage;
 
                   const lastActionIsOpenAIWait =
-                    lastActionMessage.model === "openai" &&
-                    "type" in lastActionMessage.action &&
                     lastActionMessage.action.type === "wait";
 
                   if (!lastActionIsOpenAIWait) {
                     return [...prev, actionMessage];
                   }
 
-                  const repeatedWaitMessage: ActionChatMessage<typeof model> = {
+                  const repeatedWaitMessage: ActionChatMessage = {
                     ...lastActionMessage,
                     repeatCount: (lastActionMessage.repeatCount ?? 1) + 1,
                     status: "pending",
@@ -253,7 +241,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
                   role: "assistant",
                   id: `assistant-${Date.now()}-${messages.length}`,
                   content: assistantMessage,
-                  model,
                 };
                 setMessages((prev) => [...prev, reasoningMessage]);
               }
@@ -369,8 +356,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
     stopGeneration,
     clearMessages,
     handleSubmit,
-    model,
-    setModel,
     onSandboxCreated: (
       callback: (sandboxId: string, vncUrl: string) => void
     ) => {
