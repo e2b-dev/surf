@@ -356,7 +356,7 @@ export default function Home() {
         <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
           <div
             ref={iFrameWrapperRef}
-            className="relative w-full md:flex-1 h-[40vh] md:h-auto overflow-hidden"
+            className="relative w-full lg:flex-1 h-[40vh] lg:h-auto overflow-hidden"
           >
             {isLoading || (chatLoading && !sandboxId) ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
