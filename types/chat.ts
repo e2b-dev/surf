@@ -1,9 +1,9 @@
 /**
  * Type definitions for chat messages and related functionality
  */
-import { ResponseComputerToolCall } from "openai/resources/responses/responses.mjs";
 import { ActionEvent, ComputerModel, SSEEventType } from "./api";
 import { ComputerAction } from "@/types/anthropic";
+import { OpenAIComputerAction } from "@/types/openai";
 
 /**
  * Role of a chat message
@@ -50,9 +50,8 @@ export interface SystemChatMessage extends BaseChatMessage {
 export interface ActionChatMessage<T extends ComputerModel = ComputerModel>
   extends BaseChatMessage {
   role: "action";
-  action: T extends "openai"
-    ? ResponseComputerToolCall["action"]
-    : ComputerAction;
+  action: T extends "openai" ? OpenAIComputerAction : ComputerAction;
+  repeatCount?: number;
   status?: "pending" | "completed" | "failed";
   model: ComputerModel;
 }

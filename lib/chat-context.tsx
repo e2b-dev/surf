@@ -194,15 +194,55 @@ export function ChatProvider({ children }: ChatProviderProps) {
           switch (parsedEvent.type) {
             case SSEEventType.ACTION:
               if (parsedEvent.action) {
+                const incomingAction = parsedEvent.action;
                 const actionMessage: ActionChatMessage<typeof model> = {
                   role: "action",
                   id: `action-${Date.now()}`,
-                  action: parsedEvent.action,
+                  action: incomingAction,
+                  repeatCount: 1,
                   status: "pending",
                   model,
                 };
 
-                setMessages((prev) => [...prev, actionMessage]);
+                setMessages((prev) => {
+                  const isOpenAIWaitAction =
+                    model === "openai" &&
+                    "type" in incomingAction &&
+                    incomingAction.type === "wait";
+
+                  if (!isOpenAIWaitAction) {
+                    return [...prev, actionMessage];
+                  }
+
+                  const lastMessage = prev.at(-1);
+                  if (!lastMessage || lastMessage.role !== "action") {
+                    return [...prev, actionMessage];
+                  }
+
+                  const lastActionMessage = lastMessage as ActionChatMessage<
+                    typeof model
+                  >;
+
+                  const lastActionIsOpenAIWait =
+                    lastActionMessage.model === "openai" &&
+                    "type" in lastActionMessage.action &&
+                    lastActionMessage.action.type === "wait";
+
+                  if (!lastActionIsOpenAIWait) {
+                    return [...prev, actionMessage];
+                  }
+
+                  const repeatedWaitMessage: ActionChatMessage<typeof model> = {
+                    ...lastActionMessage,
+                    repeatCount: (lastActionMessage.repeatCount ?? 1) + 1,
+                    status: "pending",
+                  };
+
+                  return [
+                    ...prev.slice(0, -1),
+                    repeatedWaitMessage,
+                  ];
+                });
               }
               break;
 

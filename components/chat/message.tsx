@@ -47,10 +47,14 @@ function ActionMessageDisplay({
   message: ActionChatMessage;
   className?: string;
 }) {
-  const { action, status } = message;
+  const { action, repeatCount, status } = message;
 
-  const formatAction = (action: any): string => {
+  const formatAction = (action: any, repeats?: number): string => {
     if (!action) return "No action details";
+
+    if (action.type === "wait") {
+      return repeats && repeats > 1 ? `wait x${repeats}` : "wait";
+    }
 
     try {
       return JSON.stringify(action, null, 2);
@@ -91,7 +95,7 @@ function ActionMessageDisplay({
           </div>
 
           <div className="bg-bg-200 dark:bg-bg-300 p-2 rounded font-mono text-xs tracking-wide text-fg-100 overflow-x-auto mb-3">
-            <code>{formatAction(action)}</code>
+            <code>{formatAction(action, repeatCount)}</code>
           </div>
         </CardContent>
       </Card>
