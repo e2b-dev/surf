@@ -4,7 +4,6 @@ import React from "react";
 import {
   ChatMessage as ChatMessageType,
   ActionChatMessage,
-  AssistantChatMessage,
 } from "@/types/chat";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -17,10 +16,8 @@ import {
   User,
   Info,
 } from "lucide-react";
-import { useChat } from "@/lib/chat-context";
 import { Badge } from "../ui/badge";
 import { OpenAiLogo } from "@phosphor-icons/react";
-import { AnthropicLogo } from "../icons";
 
 const messageVariants = cva("", {
   variants: {
@@ -47,10 +44,14 @@ function ActionMessageDisplay({
   message: ActionChatMessage;
   className?: string;
 }) {
-  const { action, status } = message;
+  const { action, repeatCount, status } = message;
 
-  const formatAction = (action: any): string => {
+  const formatAction = (action: any, repeats?: number): string => {
     if (!action) return "No action details";
+
+    if (action.type === "wait") {
+      return repeats && repeats > 1 ? `wait x${repeats}` : "wait";
+    }
 
     try {
       return JSON.stringify(action, null, 2);
@@ -91,7 +92,7 @@ function ActionMessageDisplay({
           </div>
 
           <div className="bg-bg-200 dark:bg-bg-300 p-2 rounded font-mono text-xs tracking-wide text-fg-100 overflow-x-auto mb-3">
-            <code>{formatAction(action)}</code>
+            <code>{formatAction(action, repeatCount)}</code>
           </div>
         </CardContent>
       </Card>
@@ -108,8 +109,6 @@ export function ChatMessage({ message, className }: ChatMessageProps) {
   const isSystem = role === "system";
   const isError = "isError" in message && message.isError;
 
-  const { model } = useChat();
-
   if (isSystem) {
     return (
       <div className={cn("w-full flex justify-center", className)}>
@@ -121,7 +120,7 @@ export function ChatMessage({ message, className }: ChatMessageProps) {
   if (isAction) {
     return (
       <ActionMessageDisplay
-        message={message as ActionChatMessage<typeof model>}
+        message={message as ActionChatMessage}
         className={className}
       />
     );
@@ -130,11 +129,7 @@ export function ChatMessage({ message, className }: ChatMessageProps) {
   const getRoleIcon = () => {
     if (isUser) return <User className="h-3 w-3" />;
     if (isAssistant) {
-      if ((message as AssistantChatMessage).model === "openai") {
-        return <OpenAiLogo className="h-3 w-3" />;
-      } else {
-        return <AnthropicLogo className="h-3 w-3" />;
-      }
+      return <OpenAiLogo className="h-3 w-3" />;
     }
     return <Info className="h-3 w-3" />;
   };

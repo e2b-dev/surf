@@ -1,5 +1,5 @@
 import { Sandbox } from "@e2b/desktop";
-import { ComputerModel, SSEEvent, SSEEventType } from "@/types/api";
+import { SSEEvent, SSEEventType } from "@/types/api";
 import {
   ComputerInteractionStreamerFacade,
   createStreamingResponse,
@@ -7,28 +7,8 @@ import {
 import { SANDBOX_TIMEOUT_MS } from "@/lib/config";
 import { OpenAIComputerStreamer } from "@/lib/streaming/openai";
 import { logError } from "@/lib/logger";
-import { ResolutionScaler } from "@/lib/streaming/resolution";
 
 export const maxDuration = 800;
-
-class StreamerFactory {
-  static getStreamer(
-    model: ComputerModel,
-    desktop: Sandbox,
-    resolution: [number, number]
-  ): ComputerInteractionStreamerFacade {
-    const resolutionScaler = new ResolutionScaler(desktop, resolution);
-
-    switch (model) {
-      case "anthropic":
-      // currently not implemented
-      /* return new AnthropicComputerStreamer(desktop, resolutionScaler); */
-      case "openai":
-      default:
-        return new OpenAIComputerStreamer(desktop, resolutionScaler);
-    }
-  }
-}
 
 export async function POST(request: Request) {
   const abortController = new AbortController();
@@ -42,7 +22,6 @@ export async function POST(request: Request) {
     messages,
     sandboxId,
     resolution,
-    model = "openai",
   } = await request.json();
 
   const apiKey = process.env.E2B_API_KEY;
@@ -79,14 +58,11 @@ export async function POST(request: Request) {
     desktop.setTimeout(SANDBOX_TIMEOUT_MS);
 
     try {
-      const streamer = StreamerFactory.getStreamer(
-        model as ComputerModel,
-        desktop,
-        resolution
-      );
+      const streamer: ComputerInteractionStreamerFacade =
+        new OpenAIComputerStreamer(desktop, resolution);
 
       if (!sandboxId && activeSandboxId && vncUrl) {
-        async function* stream(): AsyncGenerator<SSEEvent<typeof model>> {
+        async function* stream(): AsyncGenerator<SSEEvent> {
           yield {
             type: SSEEventType.SANDBOX_CREATED,
             sandboxId: activeSandboxId,

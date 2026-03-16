@@ -1,13 +1,10 @@
 /**
  * Type definitions for Surf Computer API and SSE events
  */
-import { ComputerAction } from "@/types/anthropic";
-import { ResponseComputerToolCall } from "openai/resources/responses/responses.mjs";
-
-/**
- * Model types supported by Surf
- */
-export type ComputerModel = "openai" | "anthropic";
+import {
+  OpenAIComputerAction,
+  OpenAIComputerScreenshotOutput,
+} from "@/types/openai";
 
 /**
  * SSE event types for client communication
@@ -32,11 +29,9 @@ export interface BaseSSEEvent {
 /**
  * Action event with details about computer action being performed
  */
-export interface ActionEvent<T extends ComputerModel> extends BaseSSEEvent {
+export interface ActionEvent extends BaseSSEEvent {
   type: SSEEventType.ACTION;
-  action: T extends "openai"
-    ? ResponseComputerToolCall["action"]
-    : ComputerAction;
+  action: OpenAIComputerAction;
 }
 
 /**
@@ -82,8 +77,8 @@ export interface ActionCompletedEvent extends BaseSSEEvent {
 /**
  * Union type of all possible SSE events
  */
-export type SSEEvent<T extends ComputerModel = ComputerModel> =
-  | ActionEvent<T>
+export type SSEEvent =
+  | ActionEvent
   | ReasoningEvent
   | DoneEvent
   | ErrorEvent
@@ -95,10 +90,7 @@ export type SSEEvent<T extends ComputerModel = ComputerModel> =
  */
 export type ActionResponse = {
   action: string;
-  data: {
-    type: "computer_screenshot";
-    image_url: string;
-  };
+  data: OpenAIComputerScreenshotOutput;
 };
 
 /**

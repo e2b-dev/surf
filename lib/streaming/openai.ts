@@ -1,10 +1,9 @@
 import { Sandbox } from "@e2b/desktop";
 import OpenAI from "openai";
-import { SSEEventType, SSEEvent } from "@/types/api";
+import { SSEEventType, SSEEvent, sleep } from "@/types/api";
 import {
   ResponseComputerToolCall,
   ResponseInput,
-  ResponseInputItem,
   Tool,
 } from "openai/resources/responses/responses.mjs";
 import {
@@ -13,7 +12,13 @@ import {
 } from "@/lib/streaming";
 import { ActionResponse } from "@/types/api";
 import { logDebug, logError, logWarning } from "../logger";
-import { ResolutionScaler } from "./resolution";
+import { OPENAI_MODEL } from "../config";
+import {
+  NormalizedOpenAIComputerCall,
+  OpenAIComputerAction,
+  OpenAIComputerCall,
+  OpenAIComputerCallOutput,
+} from "@/types/openai";
 
 const INSTRUCTIONS = `
 You are Surf, a helpful assistant that can use a computer to help the user with their tasks.
@@ -37,33 +42,230 @@ The sandbox is based on Ubuntu 22.04 and comes with many pre-installed applicati
 - Terminal with standard Linux utilities
 - File manager (PCManFM)
 - Text editor (Gedit)
-- Calculator and other basic utilities
+- Calculator and other basic utilities`;
 
-IMPORTANT: It is okay to run terminal commands at any point without confirmation, as long as they are required to fulfill the task the user has given. You should execute commands immediately when needed to complete the user's request efficiently.
+const TYPE_ACTION_CHUNK_SIZE = 50;
+const TYPE_ACTION_DELAY_MS = 25;
+const INTERSTITIAL_WAIT_DELAY_MS = 800;
+const ASYNC_BATCH_FALLBACK_DELAY_MS = 100;
 
-IMPORTANT: When typing commands in the terminal, ALWAYS send a KEYPRESS ENTER action immediately after typing the command to execute it. Terminal commands will not run until you press Enter.
+type CapturedScreenshot = {
+  base64: string;
+  byteLength: number;
+  captureDurationMs: number;
+};
 
-IMPORTANT: When editing files, prefer to use Visual Studio Code (VS Code) as it provides a better editing experience with syntax highlighting, code completion, and other helpful features.
-`;
+function previewText(value: string, maxLength = 160): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength)}...`;
+}
+
+function summarizeAction(action: OpenAIComputerAction) {
+  switch (action.type) {
+    case "click":
+      return {
+        type: action.type,
+        button: action.button,
+        x: action.x,
+        y: action.y,
+      };
+    case "double_click":
+      return {
+        type: action.type,
+        x: action.x,
+        y: action.y,
+      };
+    case "drag":
+      return {
+        type: action.type,
+        path_length: action.path.length,
+        start: action.path[0],
+        end: action.path[action.path.length - 1],
+      };
+    case "keypress":
+      return {
+        type: action.type,
+        keys: action.keys,
+      };
+    case "move":
+      return {
+        type: action.type,
+        x: action.x,
+        y: action.y,
+      };
+    case "scroll":
+      return {
+        type: action.type,
+        scroll_x: action.scroll_x,
+        scroll_y: action.scroll_y,
+        x: action.x,
+        y: action.y,
+      };
+    case "type":
+      return {
+        type: action.type,
+        text_length: action.text.length,
+        text_preview: previewText(action.text, 80),
+      };
+    case "wait":
+      return {
+        type: action.type,
+      };
+    case "screenshot":
+      return {
+        type: action.type,
+      };
+  }
+}
+
+function getWaitRunLengths(actions: OpenAIComputerAction[]): number[] {
+  const runs: number[] = [];
+  let currentRunLength = 0;
+
+  for (const action of actions) {
+    if (action.type === "wait") {
+      currentRunLength += 1;
+      continue;
+    }
+
+    if (currentRunLength > 0) {
+      runs.push(currentRunLength);
+      currentRunLength = 0;
+    }
+  }
+
+  if (currentRunLength > 0) {
+    runs.push(currentRunLength);
+  }
+
+  return runs;
+}
+
+function getTrailingWaitCount(actions: OpenAIComputerAction[]): number {
+  let count = 0;
+
+  for (let index = actions.length - 1; index >= 0; index -= 1) {
+    if (actions[index]?.type !== "wait") {
+      break;
+    }
+
+    count += 1;
+  }
+
+  return count;
+}
+
+function isAsyncKeypress(
+  action: Extract<OpenAIComputerAction, { type: "keypress" }>
+) {
+  const normalizedKeys = action.keys.map((key) => key.toUpperCase());
+
+  return normalizedKeys.some((key) =>
+    ["ENTER", "RETURN", "TAB", "ESCAPE"].includes(key)
+  );
+}
+
+function shouldApplyFallbackDelay(actions: OpenAIComputerAction[]): boolean {
+  if (getTrailingWaitCount(actions) > 0) {
+    return false;
+  }
+
+  return actions.some((action) => {
+    switch (action.type) {
+      case "click":
+      case "double_click":
+      case "drag":
+      case "scroll":
+        return true;
+      case "keypress":
+        return isAsyncKeypress(action);
+      default:
+        return false;
+    }
+  });
+}
 
 export class OpenAIComputerStreamer
-  implements ComputerInteractionStreamerFacade
-{
+  implements ComputerInteractionStreamerFacade {
   public instructions: string;
   public desktop: Sandbox;
-  public resolutionScaler: ResolutionScaler;
+  public resolution: [number, number];
 
   private openai: OpenAI;
 
-  constructor(desktop: Sandbox, resolutionScaler: ResolutionScaler) {
+  constructor(desktop: Sandbox, resolution: [number, number]) {
     this.desktop = desktop;
-    this.resolutionScaler = resolutionScaler;
+    this.resolution = resolution;
     this.openai = new OpenAI();
     this.instructions = INSTRUCTIONS;
   }
 
+  private normalizeComputerCall(
+    computerCall: OpenAIComputerCall
+  ): NormalizedOpenAIComputerCall {
+    const actions = Array.isArray(computerCall.actions)
+      ? computerCall.actions
+      : computerCall.action
+        ? [computerCall.action]
+        : [];
+
+    return {
+      ...computerCall,
+      actions,
+    };
+  }
+
+  private async captureScreenshot(): Promise<CapturedScreenshot> {
+    const captureStartedAt = Date.now();
+    const screenshotData = Buffer.from(await this.desktop.screenshot());
+
+    return {
+      base64: screenshotData.toString("base64"),
+      byteLength: screenshotData.length,
+      captureDurationMs: Date.now() - captureStartedAt,
+    };
+  }
+
+  private async captureBatchScreenshot(context: {
+    actions: OpenAIComputerAction[];
+    callId: string;
+    traceId: string;
+    turnIndex: number;
+  }): Promise<{
+    screenshot: CapturedScreenshot;
+    fallbackDelayMs: number;
+    captureTiming: "immediately_after_batch" | "after_fallback_delay";
+  }> {
+    const { actions, callId, traceId, turnIndex } = context;
+    const fallbackDelayMs = shouldApplyFallbackDelay(actions)
+      ? ASYNC_BATCH_FALLBACK_DELAY_MS
+      : 0;
+
+    logDebug("OPENAI_BATCH_SCREENSHOT_DELAY", {
+      traceId,
+      turnIndex,
+      call_id: callId,
+      fallback_delay_ms: fallbackDelayMs,
+      trailing_wait_count: getTrailingWaitCount(actions),
+    });
+
+    if (fallbackDelayMs > 0) {
+      await sleep(fallbackDelayMs);
+    }
+
+    return {
+      screenshot: await this.captureScreenshot(),
+      fallbackDelayMs,
+      captureTiming:
+        fallbackDelayMs > 0 ? "after_fallback_delay" : "immediately_after_batch",
+    };
+  }
+
   async executeAction(
-    action: ResponseComputerToolCall["action"]
+    action: OpenAIComputerAction
   ): Promise<ActionResponse | void> {
     const desktop = this.desktop;
 
@@ -72,31 +274,24 @@ export class OpenAIComputerStreamer
         break;
       }
       case "double_click": {
-        const coordinate = this.resolutionScaler.scaleToOriginalSpace([
-          action.x,
-          action.y,
-        ]);
-
-        await desktop.doubleClick(coordinate[0], coordinate[1]);
+        await desktop.doubleClick(action.x, action.y);
         break;
       }
       case "click": {
-        const coordinate = this.resolutionScaler.scaleToOriginalSpace([
-          action.x,
-          action.y,
-        ]);
-
         if (action.button === "left") {
-          await desktop.leftClick(coordinate[0], coordinate[1]);
+          await desktop.leftClick(action.x, action.y);
         } else if (action.button === "right") {
-          await desktop.rightClick(coordinate[0], coordinate[1]);
+          await desktop.rightClick(action.x, action.y);
         } else if (action.button === "wheel") {
-          await desktop.middleClick(coordinate[0], coordinate[1]);
+          await desktop.middleClick(action.x, action.y);
         }
         break;
       }
       case "type": {
-        await desktop.write(action.text);
+        await desktop.write(action.text, {
+          chunkSize: TYPE_ACTION_CHUNK_SIZE,
+          delayInMs: TYPE_ACTION_DELAY_MS,
+        });
         break;
       }
       case "keypress": {
@@ -104,12 +299,7 @@ export class OpenAIComputerStreamer
         break;
       }
       case "move": {
-        const coordinate = this.resolutionScaler.scaleToOriginalSpace([
-          action.x,
-          action.y,
-        ]);
-
-        await desktop.moveMouse(coordinate[0], coordinate[1]);
+        await desktop.moveMouse(action.x, action.y);
         break;
       }
       case "scroll": {
@@ -121,18 +311,18 @@ export class OpenAIComputerStreamer
         break;
       }
       case "wait": {
+        await sleep(INTERSTITIAL_WAIT_DELAY_MS);
         break;
       }
       case "drag": {
-        const startCoordinate = this.resolutionScaler.scaleToOriginalSpace([
+        const startCoordinate: [number, number] = [
           action.path[0].x,
           action.path[0].y,
-        ]);
-
-        const endCoordinate = this.resolutionScaler.scaleToOriginalSpace([
+        ];
+        const endCoordinate: [number, number] = [
           action.path[1].x,
           action.path[1].y,
-        ]);
+        ];
 
         await desktop.drag(startCoordinate, endCoordinate);
         break;
@@ -145,35 +335,48 @@ export class OpenAIComputerStreamer
 
   async *stream(
     props: ComputerInteractionStreamerFacadeStreamProps
-  ): AsyncGenerator<SSEEvent<"openai">> {
+  ): AsyncGenerator<SSEEvent> {
     const { messages, signal } = props;
+    const traceId = `openai-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    let turnIndex = 0;
 
     try {
-      const modelResolution = this.resolutionScaler.getScaledResolution();
+      // GPT-5.4 GA "computer" tool infers display dimensions from the screenshot
+      const computerTool = {
+        type: "computer" as const,
+      } as unknown as Tool;
 
-      const computerTool: Tool = {
-        // @ts-ignore
-        type: "computer_use_preview",
-        display_width: modelResolution[0],
-        display_height: modelResolution[1],
-        // @ts-ignore
-        environment: "linux",
-      };
+      logDebug("OPENAI_COMPUTER_STREAM_START", {
+        traceId,
+        model: OPENAI_MODEL,
+        resolution: this.resolution,
+        message_count: messages.length,
+        last_user_message_preview:
+          messages
+            .filter((message) => message.role === "user")
+            .at(-1)
+            ?.content.slice(0, 160) ?? null,
+      });
 
       let response = await this.openai.responses.create({
-        model: "computer-use-preview",
+        model: OPENAI_MODEL,
         tools: [computerTool],
         input: [...(messages as ResponseInput)],
         truncation: "auto",
         instructions: this.instructions,
         reasoning: {
           effort: "medium",
-          generate_summary: "concise",
         },
       });
 
       while (true) {
         if (signal.aborted) {
+          logDebug("OPENAI_COMPUTER_STREAM_ABORTED", {
+            traceId,
+            turnIndex,
+          });
           yield {
             type: SSEEventType.DONE,
             content: "Generation stopped by user",
@@ -181,11 +384,36 @@ export class OpenAIComputerStreamer
           break;
         }
 
-        const computerCalls = response.output.filter(
-          (item) => item.type === "computer_call"
-        );
+        turnIndex += 1;
+
+        const computerCalls = response.output
+          .filter(
+            (item): item is ResponseComputerToolCall => item.type === "computer_call"
+          )
+          .map((computerCall) =>
+            this.normalizeComputerCall(computerCall as OpenAIComputerCall)
+          );
+
+        logDebug("OPENAI_RESPONSE_RECEIVED", {
+          traceId,
+          turnIndex,
+          response_id: response.id,
+          output_item_types: response.output.map((item) => item.type),
+          computer_call_count: computerCalls.length,
+          output_text_preview: response.output_text
+            ? previewText(response.output_text)
+            : null,
+        });
 
         if (computerCalls.length === 0) {
+          logDebug("OPENAI_RESPONSE_FINAL", {
+            traceId,
+            turnIndex,
+            response_id: response.id,
+            output_text_preview: response.output_text
+              ? previewText(response.output_text)
+              : null,
+          });
           yield {
             type: SSEEventType.REASONING,
             content: response.output_text,
@@ -196,10 +424,7 @@ export class OpenAIComputerStreamer
           break;
         }
 
-        const computerCall = computerCalls[0];
-        const callId = computerCall.call_id;
-        const action = computerCall.action;
-
+        // Emit reasoning before actions
         const reasoningItems = response.output.filter(
           (item) => item.type === "message" && "content" in item
         );
@@ -207,7 +432,6 @@ export class OpenAIComputerStreamer
         if (reasoningItems.length > 0 && "content" in reasoningItems[0]) {
           const content = reasoningItems[0].content;
 
-          // Log to debug why content is not a string
           logDebug("Reasoning content structure:", content);
 
           yield {
@@ -219,48 +443,156 @@ export class OpenAIComputerStreamer
           };
         }
 
-        yield {
-          type: SSEEventType.ACTION,
-          action,
-        };
+        // Process all computer calls in this turn (GPT-5.4 supports batched actions)
+        const callOutputs: OpenAIComputerCallOutput[] = [];
 
-        await this.executeAction(action);
+        for (const [callIndex, computerCall] of computerCalls.entries()) {
+          const callId = computerCall.call_id;
+          const waitRunLengths = getWaitRunLengths(computerCall.actions);
+          const trailingWaitCount = getTrailingWaitCount(computerCall.actions);
+          const firstTrailingWaitIndex =
+            trailingWaitCount > 0
+              ? computerCall.actions.length - trailingWaitCount
+              : Number.POSITIVE_INFINITY;
 
-        yield {
-          type: SSEEventType.ACTION_COMPLETED,
-        };
+          logDebug("OPENAI_COMPUTER_CALL_BATCH", {
+            traceId,
+            turnIndex,
+            call_index: callIndex,
+            call_id: callId,
+            action_count: computerCall.actions.length,
+            action_types: computerCall.actions.map((action) => action.type),
+            wait_action_count: computerCall.actions.filter(
+              (action) => action.type === "wait"
+            ).length,
+            consecutive_wait_runs: waitRunLengths,
+            trailing_wait_count: trailingWaitCount,
+            actions: computerCall.actions.map((action, actionIndex) => ({
+              action_index: actionIndex,
+              ...summarizeAction(action),
+            })),
+          });
 
-        const newScreenshotData = await this.resolutionScaler.takeScreenshot();
-        const newScreenshotBase64 =
-          Buffer.from(newScreenshotData).toString("base64");
+          for (const [actionIndex, action] of computerCall.actions.entries()) {
+            if (!action) continue;
 
-        const computerCallOutput: ResponseInputItem = {
-          call_id: callId,
-          type: "computer_call_output",
-          output: {
-            // @ts-ignore
-            type: "input_image",
-            image_url: `data:image/png;base64,${newScreenshotBase64}`,
-          },
-        };
+            const actionStartedAt = Date.now();
+
+            yield {
+              type: SSEEventType.ACTION,
+              action,
+            };
+
+            logDebug("OPENAI_ACTION_EXECUTION_START", {
+              traceId,
+              turnIndex,
+              call_id: callId,
+              action_index: actionIndex,
+              action: summarizeAction(action),
+              implementation_behavior:
+                action.type === "wait"
+                  ? actionIndex >= firstTrailingWaitIndex
+                    ? "deferred_to_settle"
+                    : "sleep"
+                  : action.type === "screenshot"
+                    ? "noop"
+                    : "desktop_command",
+              trailing_wait_deferred:
+                action.type === "wait" && actionIndex >= firstTrailingWaitIndex,
+            });
+
+            if (
+              action.type === "wait" &&
+              actionIndex >= firstTrailingWaitIndex
+            ) {
+              logDebug("OPENAI_ACTION_EXECUTION_DONE", {
+                traceId,
+                turnIndex,
+                call_id: callId,
+                action_index: actionIndex,
+                action_type: action.type,
+                duration_ms: 0,
+              });
+
+              yield {
+                type: SSEEventType.ACTION_COMPLETED,
+              };
+
+              continue;
+            }
+
+            await this.executeAction(action);
+
+            logDebug("OPENAI_ACTION_EXECUTION_DONE", {
+              traceId,
+              turnIndex,
+              call_id: callId,
+              action_index: actionIndex,
+              action_type: action.type,
+              duration_ms: Date.now() - actionStartedAt,
+            });
+
+            yield {
+              type: SSEEventType.ACTION_COMPLETED,
+            };
+          }
+
+          const {
+            screenshot,
+            fallbackDelayMs,
+            captureTiming,
+          } = await this.captureBatchScreenshot({
+            actions: computerCall.actions,
+            callId,
+            traceId,
+            turnIndex,
+          });
+
+          logDebug("OPENAI_SCREENSHOT_CAPTURED", {
+            traceId,
+            turnIndex,
+            call_id: callId,
+            capture_duration_ms: screenshot.captureDurationMs,
+            screenshot_bytes: screenshot.byteLength,
+            screenshot_base64_chars: screenshot.base64.length,
+            capture_timing: captureTiming,
+            fallback_delay_ms: fallbackDelayMs,
+          });
+
+          callOutputs.push({
+            call_id: callId,
+            type: "computer_call_output",
+            output: {
+              type: "computer_screenshot",
+              image_url: `data:image/png;base64,${screenshot.base64}`,
+              detail: "original",
+            },
+          });
+        }
+
+        logDebug("OPENAI_COMPUTER_CALL_OUTPUTS_SENT", {
+          traceId,
+          turnIndex,
+          previous_response_id: response.id,
+          output_count: callOutputs.length,
+          call_ids: callOutputs.map((output) => output.call_id),
+        });
 
         response = await this.openai.responses.create({
-          model: "computer-use-preview",
+          model: OPENAI_MODEL,
           previous_response_id: response.id,
           instructions: this.instructions,
           tools: [computerTool],
-          input: [computerCallOutput],
+          input: callOutputs as unknown as ResponseInput,
           truncation: "auto",
           reasoning: {
             effort: "medium",
-            generate_summary: "concise",
           },
         });
       }
     } catch (error) {
       logError("OPENAI_STREAMER", error);
       if (error instanceof OpenAI.APIError && error.status === 429) {
-        // since hitting rate limits is not expected, we optimistically assume we hit our quota limit (both have the same status code)
         yield {
           type: SSEEventType.ERROR,
           content:

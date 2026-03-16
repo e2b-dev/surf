@@ -198,10 +198,10 @@ export default function Home() {
   }, [onSandboxCreated]);
 
   return (
-    <div className="w-full h-dvh overflow-hidden p-2 sm:p-4 md:p-8 md:pb-10">
+    <div className="w-full flex justify-center items-center h-dvh overflow-hidden p-2 sm:p-4 md:p-8 md:pb-10">
       <Frame
         classNames={{
-          wrapper: "w-full h-full",
+          wrapper: "w-full max-lg:h-full lg:aspect-[18/9] max-w-[2000px]",
           frame: "flex flex-col h-full overflow-hidden",
         }}
       >
@@ -239,7 +239,7 @@ export default function Home() {
             </Button>
           </div>
 
-          <div className="hidden md:flex items-center gap-2">
+          <div className="hidden lg:flex items-center gap-2">
             <ThemeToggle />
             <RepoBanner />
 
@@ -262,14 +262,12 @@ export default function Home() {
                     }
                   >
                     <Timer
-                      className={`h-3 w-3 ${
-                        !isTabVisible ? "text-fg-400" : ""
-                      }`}
+                      className={`h-3 w-3 ${!isTabVisible ? "text-fg-400" : ""
+                        }`}
                     />
                     <span
-                      className={`text-xs font-medium ${
-                        !isTabVisible ? "text-fg-400" : ""
-                      }`}
+                      className={`text-xs font-medium ${!isTabVisible ? "text-fg-400" : ""
+                        }`}
                     >
                       {Math.floor(timeRemaining / 60)}:
                       {(timeRemaining % 60).toString().padStart(2, "0")}
@@ -290,7 +288,7 @@ export default function Home() {
             </AnimatePresence>
           </div>
 
-          <div className="md:hidden flex items-center">
+          <div className="lg:hidden flex items-center">
             <AnimatePresence>
               {sandboxId && (
                 <motion.div
@@ -312,14 +310,12 @@ export default function Home() {
                     className="px-1.5"
                   >
                     <Timer
-                      className={`h-3 w-3 ${
-                        !isTabVisible ? "text-fg-400" : ""
-                      }`}
+                      className={`h-3 w-3 ${!isTabVisible ? "text-fg-400" : ""
+                        }`}
                     />
                     <span
-                      className={`text-xs font-medium ml-1 ${
-                        !isTabVisible ? "text-fg-400" : ""
-                      }`}
+                      className={`text-xs font-medium ml-1 ${!isTabVisible ? "text-fg-400" : ""
+                        }`}
                     >
                       {Math.floor(timeRemaining / 60)}:
                       {(timeRemaining % 60).toString().padStart(2, "0")}
@@ -343,7 +339,7 @@ export default function Home() {
         <AnimatePresence>
           {mobileMenuOpen && (
             <motion.div
-              className="md:hidden border-b p-2 flex items-center justify-between"
+              className="lg:hidden border-b p-2 flex items-center justify-between"
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
@@ -357,10 +353,10 @@ export default function Home() {
           )}
         </AnimatePresence>
 
-        <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+        <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
           <div
             ref={iFrameWrapperRef}
-            className="relative w-full md:flex-1 h-[40vh] md:h-auto overflow-hidden"
+            className="relative w-full lg:flex-1 h-[40vh] lg:h-auto overflow-hidden"
           >
             {isLoading || (chatLoading && !sandboxId) ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
@@ -411,7 +407,7 @@ export default function Home() {
             )}
           </div>
 
-          <div className="flex-1 flex flex-col relative border-t md:border-t-0 md:border-l overflow-hidden h-[60vh] md:h-auto md:max-w-xl">
+          <div className="flex-1 flex flex-col relative border-t lg:border-t-0 lg:border-l overflow-hidden h-[60vh] lg:h-auto lg:max-w-xl">
             <ChatList className="flex-1" messages={messages} />
 
             {messages.length === 0 && (
