@@ -7,6 +7,8 @@ import {
 import { SANDBOX_TIMEOUT_MS } from "@/lib/config";
 import { OpenAIComputerStreamer } from "@/lib/streaming/openai";
 import { logError } from "@/lib/logger";
+import { PAYCHEX_LOGIN_URL } from "@/lib/paychex-flow";
+import { preparePaychexSandbox } from "@/lib/sandbox-bootstrap";
 
 export const maxDuration = 800;
 
@@ -22,6 +24,7 @@ export async function POST(request: Request) {
     messages,
     sandboxId,
     resolution,
+    bootstrap,
   } = await request.json();
 
   const apiKey = process.env.E2B_API_KEY;
@@ -69,6 +72,9 @@ export async function POST(request: Request) {
             vncUrl: vncUrl as string,
           };
 
+          if (bootstrap === "paychex") {
+            await preparePaychexSandbox(desktop as Sandbox, PAYCHEX_LOGIN_URL);
+          }
           yield* streamer.stream({ messages, signal });
         }
 

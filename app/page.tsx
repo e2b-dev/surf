@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useCallback, useRef, useState, useEffect } from "react";
 import {
   MoonIcon,
   SunIcon,
@@ -16,7 +16,6 @@ import { increaseTimeout, stopSandboxAction } from "@/app/actions";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChatList } from "@/components/chat/message-list";
 import { ChatInput } from "@/components/chat/input";
-import { ExamplePrompts } from "@/components/chat/example-prompts";
 import { useChat } from "@/lib/chat-context";
 import Frame from "@/components/frame";
 import { Button } from "@/components/ui/button";
@@ -26,6 +25,11 @@ import Logo from "@/components/logo";
 import { RepoBanner } from "@/components/repo-banner";
 import { SANDBOX_TIMEOUT_MS } from "@/lib/config";
 import { Surfing } from "@/components/surfing";
+import {
+  PAYCHEX_ADP_FLOW_PROMPT,
+  PAYCHEX_FLOW_TITLE,
+  PAYCHEX_LOGIN_URL,
+} from "@/lib/paychex-flow";
 
 export default function Home() {
   const [sandboxId, setSandboxId] = useState<string | null>(null);
@@ -39,6 +43,7 @@ export default function Home() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const iFrameWrapperRef = useRef<HTMLDivElement>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const hasAutoStartedRef = useRef(false);
 
   const {
     messages,
@@ -87,7 +92,7 @@ export default function Home() {
     }
   };
 
-  const handleIncreaseTimeout = async () => {
+  const handleIncreaseTimeout = useCallback(async () => {
     if (!sandboxId) return;
 
     try {
@@ -98,7 +103,7 @@ export default function Home() {
       console.error("Failed to increase time:", error);
       toast.error("Failed to increase time");
     }
-  };
+  }, [sandboxId]);
 
   const onSubmit = (e: React.FormEvent) => {
     const content = handleSubmit(e);
@@ -121,7 +126,7 @@ export default function Home() {
     }
   };
 
-  const handleExampleClick = (prompt: string) => {
+  const startPaychexFlow = useCallback(() => {
     const width =
       iFrameWrapperRef.current?.clientWidth ||
       (window.innerWidth < 768 ? window.innerWidth - 32 : 1024);
@@ -130,12 +135,14 @@ export default function Home() {
       (window.innerWidth < 768 ? Math.min(window.innerHeight * 0.4, 400) : 768);
 
     sendMessage({
-      content: prompt,
+      content: PAYCHEX_ADP_FLOW_PROMPT,
       sandboxId: sandboxId || undefined,
       environment: "linux",
       resolution: [width, height],
+      hidden: true,
+      bootstrap: "paychex",
     });
-  };
+  }, [sandboxId, sendMessage]);
 
   const handleSandboxCreated = (newSandboxId: string, newVncUrl: string) => {
     setSandboxId(newSandboxId);
@@ -189,13 +196,27 @@ export default function Home() {
       toast.error("Instance time expired");
       setTimeRemaining(SANDBOX_TIMEOUT_MS / 1000);
     }
-  }, [timeRemaining, sandboxId, stopGeneration, clearMessages, isTabVisible]);
+  }, [
+    timeRemaining,
+    sandboxId,
+    stopGeneration,
+    clearMessages,
+    isTabVisible,
+    handleIncreaseTimeout,
+  ]);
 
   useEffect(() => {
     onSandboxCreated((newSandboxId: string, newVncUrl: string) => {
       handleSandboxCreated(newSandboxId, newVncUrl);
     });
   }, [onSandboxCreated]);
+
+  useEffect(() => {
+    if (hasAutoStartedRef.current || chatLoading || sandboxId) return;
+
+    hasAutoStartedRef.current = true;
+    startPaychexFlow();
+  }, [chatLoading, sandboxId, startPaychexFlow]);
 
   return (
     <div className="w-full flex justify-center items-center h-dvh overflow-hidden p-2 sm:p-4 md:p-8 md:pb-10">
@@ -378,7 +399,7 @@ export default function Home() {
                 <p className="text-sm text-fg-500 mt-4">
                   {isLoading
                     ? "Preparing your sandbox environment..."
-                    : "Creating a new sandbox for your request..."}
+                    : "Installing Chrome and opening Paychex Flex..."}
                 </p>
               </div>
             ) : sandboxId && vncUrl ? (
@@ -392,9 +413,8 @@ export default function Home() {
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
                 <Surfing className="text-[7px] leading-[7px] text-accent font-bold" />
                 <h1 className="text-center text-fg-300 max-w-xs">
-                  <span className="text-fg">Type</span> a message or{" "}
-                  <span className="text-fg">select</span> an example prompt to
-                  start a new{" "}
+                  <span className="text-fg">{PAYCHEX_FLOW_TITLE}</span> starts
+                  a new{" "}
                   <a
                     href="https://github.com/e2b-dev/desktop"
                     className="underline inline-flex items-center gap-1 decoration-accent decoration-1 underline-offset-2 text-accent"
@@ -402,6 +422,7 @@ export default function Home() {
                   >
                     sandbox <ArrowUpRight className="size-4" />
                   </a>
+                  {" "}and opens Paychex Flex in Chrome at {PAYCHEX_LOGIN_URL}.
                 </h1>
               </div>
             )}
@@ -409,14 +430,6 @@ export default function Home() {
 
           <div className="flex-1 flex flex-col relative border-t lg:border-t-0 lg:border-l overflow-hidden h-[60vh] lg:h-auto lg:max-w-xl">
             <ChatList className="flex-1" messages={messages} />
-
-            {messages.length === 0 && (
-              <ExamplePrompts
-                onPromptClick={handleExampleClick}
-                disabled={false}
-                className="-translate-y-16"
-              />
-            )}
 
             <ChatInput
               input={input}

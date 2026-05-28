@@ -1,9 +1,9 @@
 ![E2B Surf Preview Light](/readme-assets/surf-light.png#gh-light-mode-only)
 ![E2B Surf Preview Dark](/readme-assets/surf-dark.png#gh-dark-mode-only)
 
-# 🏄 Surf - OpenAI's Computer Use Agent + E2B Desktop
+# Surf - Paychex Flex to ADP Computer Use Agent
 
-A Next.js application that allows AI to interact with a virtual desktop environment. This project integrates [E2B's desktop sandbox](https://github.com/e2b-dev/desktop) with OpenAI's API to create an AI agent that can perform tasks on a virtual computer through natural language instructions.
+A Next.js application that launches a Paychex Flex to ADP migration discovery flow in a virtual desktop environment. This project integrates [E2B's desktop sandbox](https://github.com/e2b-dev/desktop) with OpenAI's API to create an AI agent that can inspect Paychex report access through a virtual computer.
 
 [E2B](https://e2b.dev) is an open source isolated virtual computer in the cloud made for AI use cases.
 
@@ -11,10 +11,11 @@ A Next.js application that allows AI to interact with a virtual desktop environm
 
 The Computer Use App provides a web interface where users can:
 
-1. Start a virtual desktop sandbox environment
-2. Send natural language instructions to an AI agent
-3. Watch as the AI agent performs actions on the virtual desktop
-4. Interact with the AI through a chat interface
+1. Automatically start a virtual desktop sandbox environment
+2. Install and launch Chrome in the Linux desktop
+3. Open Paychex Flex at `https://partners.paychex.com/companies`
+4. Guide the user through Paychex login and report-access discovery
+5. Watch as the AI agent navigates toward Analytics and Reports > All Reports
 
 The application uses Server-Sent Events (SSE) to stream AI responses and actions in real-time, providing a seamless experience.
 
@@ -31,13 +32,12 @@ The application consists of several key components:
 
 ### Core Flow
 
-1. User starts a new sandbox instance
+1. The app auto-starts the Paychex Flex to ADP migration discovery flow
 2. E2B creates a virtual desktop and provides a URL for streaming
-3. User sends instructions via the chat interface
-4. Backend processes the instructions using OpenAI's API
-5. AI generates actions (clicks, typing, etc.) to perform on the virtual desktop
-6. Actions are executed on the sandbox and streamed back to the frontend
-7. The process repeats as the user continues to provide instructions
+3. The backend installs Chrome if needed and opens the Paychex portal
+4. Backend processes the fixed Paychex flow instructions using OpenAI's API
+5. AI guides login/MFA, verifies the selected company in the top right, and navigates left menu > Analytics and Reports > All Reports
+6. AI reports whether the selected company has Paychex reports access
 
 ## Prerequisites
 
@@ -81,14 +81,13 @@ Navigate to [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## Usage
 
-1. **Start a Sandbox Instance**
-   - Click the "Start new Sandbox" button to initialize a virtual desktop environment
-   - Wait for the sandbox to start (this may take a few seconds)
+1. **Open the Application**
+   - The Paychex Flex to ADP discovery flow starts automatically
+   - Wait for the sandbox to start and Chrome to open Paychex Flex
 
-2. **Send Instructions**
-   - Type your instructions in the chat input (e.g., "Open Firefox and go to google.com")
-   - Press Enter or click the send button
-   - You can also select from example prompts if available
+2. **Complete Paychex Login**
+   - Use the virtual desktop to complete login and MFA when prompted
+   - Confirm the correct company is selected in the top right before reports are checked
 
 3. **Watch AI Actions**
    - The AI will process your instructions and perform actions on the virtual desktop
@@ -103,10 +102,11 @@ Navigate to [http://localhost:3000](http://localhost:3000) in your browser.
 ## Features
 
 - **Virtual Desktop Environment**: Runs a Linux-based desktop in a sandbox
-- **AI-Powered Interaction**: Uses OpenAI's API to understand and execute user instructions
+- **Paychex Flex to ADP Flow**: Auto-launches the report-access discovery workflow
+- **Chrome Bootstrap**: Installs and opens Chrome in the Linux sandbox
+- **AI-Powered Interaction**: Uses OpenAI's API to execute the fixed migration discovery flow
 - **Real-Time Streaming**: Shows AI actions and responses as they happen
 - **Chat Interface**: Provides a conversational interface for interacting with the AI
-- **Example Prompts**: Offers pre-defined instructions to help users get started
 - **Dark/Light Mode**: Supports both dark and light themes
 
 ## Technical Details

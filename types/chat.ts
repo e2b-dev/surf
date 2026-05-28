@@ -90,6 +90,7 @@ export interface ChatApiRequest {
   sandboxId?: string;
   environment?: string;
   resolution: [number, number];
+  bootstrap?: "paychex";
 }
 
 /**
@@ -100,4 +101,6 @@ export interface SendMessageOptions {
   sandboxId?: string;
   environment?: string;
   resolution: [number, number];
+  hidden?: boolean;
+  bootstrap?: "paychex";
 }

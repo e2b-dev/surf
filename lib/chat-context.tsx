@@ -18,6 +18,7 @@ import {
   SystemChatMessage,
 } from "@/types/chat";
 import { SSEEventType } from "@/types/api";
+import { appendUserMessageForDisplay } from "@/lib/chat-messages";
 import { logDebug, logError } from "./logger";
 
 interface ChatContextType extends ChatState {
@@ -86,6 +87,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
     sandboxId,
     environment,
     resolution,
+    hidden,
+    bootstrap,
   }: SendMessageOptions) => {
     if (isLoading) return;
 
@@ -98,7 +101,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
       id: Date.now().toString(),
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    setMessages((prev) =>
+      appendUserMessageForDisplay(prev, userMessage, hidden)
+    );
 
     abortControllerRef.current = new AbortController();
 
@@ -122,6 +127,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           sandboxId,
           environment,
           resolution,
+          bootstrap,
         }),
         signal: abortControllerRef.current.signal,
       });
