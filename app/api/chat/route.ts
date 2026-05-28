@@ -9,12 +9,25 @@ import { OpenAIComputerStreamer } from "@/lib/streaming/openai";
 import { logError } from "@/lib/logger";
 import { PAYCHEX_LOGIN_URL } from "@/lib/paychex-flow";
 import { preparePaychexSandbox } from "@/lib/sandbox-bootstrap";
+import { getCurrentUser, getInitializedDatabase } from "@/lib/auth";
+import {
+  createSandboxRecord,
+  getSandboxForUser,
+  touchSandboxForUser,
+} from "@/lib/auth-store";
 
 export const maxDuration = 800;
 
 export async function POST(request: Request) {
+  const user = await getCurrentUser();
+
+  if (!user) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   const abortController = new AbortController();
   const { signal } = abortController;
+  const db = await getInitializedDatabase();
 
   request.signal.addEventListener("abort", () => {
     abortController.abort();
@@ -38,6 +51,13 @@ export async function POST(request: Request) {
   let vncUrl: string | undefined;
 
   try {
+    if (
+      activeSandboxId &&
+      !(await getSandboxForUser(db, user.id, activeSandboxId))
+    ) {
+      return new Response("Sandbox not found", { status: 403 });
+    }
+
     if (!activeSandboxId) {
       const newSandbox = await Sandbox.create({
         resolution,
@@ -50,8 +70,14 @@ export async function POST(request: Request) {
       activeSandboxId = newSandbox.sandboxId;
       vncUrl = newSandbox.stream.getUrl();
       desktop = newSandbox;
+      await createSandboxRecord(db, {
+        userId: user.id,
+        sandboxId: activeSandboxId,
+        vncUrl,
+      });
     } else {
       desktop = await Sandbox.connect(activeSandboxId);
+      await touchSandboxForUser(db, user.id, activeSandboxId);
     }
 
     if (!desktop) {

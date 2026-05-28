@@ -1,0 +1,29 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: surf
+      POSTGRES_USER: surf
+      POSTGRES_PASSWORD: surf
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U surf -d surf"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  surf:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://surf:surf@postgres:5432/surf
+
+volumes:
+  postgres-data:

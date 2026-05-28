@@ -5,6 +5,7 @@
 A Next.js application that launches an Invoke Paychex Flex to ADP migration discovery flow in a virtual desktop environment. This project integrates a desktop sandbox with OpenAI's API to create an AI agent that can inspect Paychex report access through a virtual computer.
 
 Invoke uses an isolated virtual computer in the cloud for Paychex report-access discovery.
+Each signed-in user gets their own sandbox records. The server checks sandbox ownership before connecting to, extending, or stopping a sandbox, so one user cannot use another user's sandbox ID.
 
 ## Overview
 
@@ -44,8 +45,9 @@ Before starting, you'll need:
 
 1. [Node.js](https://nodejs.org/) (version specified in package.json)
 2. [npm](https://www.npmjs.com/) (comes with Node.js)
-3. An [E2B API key](https://e2b.dev/docs/getting-started/api-key)
-4. An [OpenAI API key](https://platform.openai.com/api-keys)
+3. PostgreSQL, or Docker Compose for the included Postgres service
+4. An [E2B API key](https://e2b.dev/docs/getting-started/api-key)
+5. An [OpenAI API key](https://platform.openai.com/api-keys)
 
 ## Setup Instructions
 
@@ -62,21 +64,37 @@ npm install
 
 3. **Set up environment variables**
 
-Create a `.env.local` file in the root directory based on the provided `.env.example`:
+Create a `.env` file in the root directory based on the provided `.env.example`:
 
 ```env
 E2B_API_KEY=your_e2b_api_key
 OPENAI_API_KEY=your_openai_api_key
+DATABASE_URL=postgresql://surf:surf@localhost:5432/surf
 ```
 
-4. **Start the development server**
+4. **Start Postgres**
+
+For local development, run a Postgres database that matches `DATABASE_URL`. The included Docker Compose file starts Postgres and the app together:
+
+```bash
+docker compose up --build
+```
+
+5. **Start the development server**
 ```bash
 npm run dev
 ```
 
-5. **Open the application**
+6. **Open the application**
 
 Navigate to [http://localhost:3000](http://localhost:3000) in your browser.
+
+The database schema is created automatically on first request. A default user is seeded:
+
+```text
+email: admin
+password: admin
+```
 
 ## Usage
 
@@ -106,6 +124,7 @@ Navigate to [http://localhost:3000](http://localhost:3000) in your browser.
 - **AI-Powered Interaction**: Uses OpenAI's API to execute the fixed migration discovery flow
 - **Real-Time Streaming**: Shows AI actions and responses as they happen
 - **Chat Interface**: Provides a conversational interface for interacting with the AI
+- **User Login**: Stores users, sessions, and sandbox ownership in Postgres
 - **Dark/Light Mode**: Supports both dark and light themes
 
 ## Technical Details
@@ -119,23 +138,27 @@ The application uses several key dependencies:
 - **OpenAI**: SDK for interacting with OpenAI's API
 - **Tailwind CSS**: Utility-first CSS framework for styling
 - **Framer Motion**: Library for animations
+- **PostgreSQL**: Stores users, sessions, and sandbox ownership records
 
 See `package.json` for a complete list of dependencies.
 
 ### API Endpoints
 
 - **/api/chat**: Handles chat messages and streams AI responses and actions
+- **/login**: Signs users in with email and password
+- **/signup**: Creates users with email and password
 
 ### Server Actions
 
-- **createSandbox**: Creates a new sandbox instance
 - **increaseTimeout**: Extends the sandbox timeout
 - **stopSandboxAction**: Stops a running sandbox instance
+- **logoutAction**: Clears the active login session
 
 ## Troubleshooting
 
-- **Sandbox not starting**: Verify your E2B API key is correct in `.env.local`
+- **Sandbox not starting**: Verify your E2B API key is correct in `.env`
 - **AI not responding**: Check that your OpenAI API key is valid and has access to the required models
+- **Login fails or pages return server errors**: Verify Postgres is running and `DATABASE_URL` points to it
 - **Actions not working**: Ensure the sandbox is running and the AI has proper instructions
 
 ## Contributing

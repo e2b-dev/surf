@@ -12,13 +12,16 @@ import {
   ChatState,
   ParsedSSEEvent,
   SendMessageOptions,
-  ActionChatMessage,
   UserChatMessage,
   AssistantChatMessage,
   SystemChatMessage,
 } from "@/types/chat";
 import { SSEEventType } from "@/types/api";
-import { appendUserMessageForDisplay } from "@/lib/chat-messages";
+import {
+  appendActionMessageForDisplay,
+  appendSystemMessageForDisplay,
+  appendUserMessageForDisplay,
+} from "@/lib/chat-messages";
 import { logDebug, logError } from "./logger";
 
 interface ChatContextType extends ChatState {
@@ -139,14 +142,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
       const reader = response.body?.getReader();
       if (!reader) throw new Error("Response body is null");
 
-      setMessages((prev) => [
-        ...prev,
-        {
+      setMessages((prev) =>
+        appendSystemMessageForDisplay(prev, {
           role: "system",
           id: `system-message-${Date.now()}`,
           content: "Task started",
-        },
-      ]);
+        })
+      );
 
       const decoder = new TextDecoder();
       let assistantMessage = "";
@@ -167,7 +169,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
                     content: "Task completed",
                   };
 
-                  return [...prev, systemMessage];
+                  return appendSystemMessageForDisplay(prev, systemMessage);
                 });
                 setIsLoading(false);
               }
@@ -196,47 +198,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
           switch (parsedEvent.type) {
             case SSEEventType.ACTION:
               if (parsedEvent.action) {
-                const incomingAction = parsedEvent.action;
-                const actionMessage: ActionChatMessage = {
-                  role: "action",
-                  id: `action-${Date.now()}`,
-                  action: incomingAction,
-                  repeatCount: 1,
-                  status: "pending",
-                };
-
-                setMessages((prev) => {
-                  const isOpenAIWaitAction = incomingAction.type === "wait";
-
-                  if (!isOpenAIWaitAction) {
-                    return [...prev, actionMessage];
-                  }
-
-                  const lastMessage = prev.at(-1);
-                  if (!lastMessage || lastMessage.role !== "action") {
-                    return [...prev, actionMessage];
-                  }
-
-                  const lastActionMessage = lastMessage as ActionChatMessage;
-
-                  const lastActionIsOpenAIWait =
-                    lastActionMessage.action.type === "wait";
-
-                  if (!lastActionIsOpenAIWait) {
-                    return [...prev, actionMessage];
-                  }
-
-                  const repeatedWaitMessage: ActionChatMessage = {
-                    ...lastActionMessage,
-                    repeatCount: (lastActionMessage.repeatCount ?? 1) + 1,
+                const action = parsedEvent.action;
+                setMessages((prev) =>
+                  appendActionMessageForDisplay(prev, {
+                    role: "action",
+                    id: `action-${Date.now()}`,
+                    action,
+                    repeatCount: 1,
                     status: "pending",
-                  };
-
-                  return [
-                    ...prev.slice(0, -1),
-                    repeatedWaitMessage,
-                  ];
-                });
+                  })
+                );
               }
               break;
 
@@ -260,22 +231,21 @@ export function ChatProvider({ children }: ChatProviderProps) {
                   content: parsedEvent.content || "Task completed",
                 };
 
-                return [...prev, systemMessage];
+                return appendSystemMessageForDisplay(prev, systemMessage);
               });
               setIsLoading(false);
               break;
 
             case SSEEventType.ERROR:
               setError(parsedEvent.content);
-              setMessages((prev) => [
-                ...prev,
-                {
+              setMessages((prev) =>
+                appendSystemMessageForDisplay(prev, {
                   role: "system",
                   id: `system-${Date.now()}`,
                   content: parsedEvent.content,
                   isError: true,
-                },
-              ]);
+                })
+              );
               setIsLoading(false);
               break;
 
@@ -293,23 +263,6 @@ export function ChatProvider({ children }: ChatProviderProps) {
               break;
 
             case SSEEventType.ACTION_COMPLETED:
-              setMessages((prev) => {
-                const lastActionIndex = [...prev]
-                  .reverse()
-                  .findIndex((msg) => msg.role === "action");
-
-                if (lastActionIndex !== -1) {
-                  const actualIndex = prev.length - 1 - lastActionIndex;
-
-                  return prev.map((msg, index) =>
-                    index === actualIndex
-                      ? { ...msg, status: "completed" }
-                      : msg
-                  );
-                }
-
-                return prev;
-              });
               break;
           }
         }
