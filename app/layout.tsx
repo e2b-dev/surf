@@ -20,19 +20,24 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Surf - E2B Computer Use Agent",
+  title: "Invoke - Paychex ADP Agent",
   description:
-    "AI agent that interacts with a virtual desktop environment through natural language instructions",
+    "Invoke Paychex Flex to ADP migration discovery agent",
   keywords: [
     "AI",
     "desktop",
     "automation",
-    "E2B",
+    "Invoke",
     "OpenAI",
+    "Paychex",
+    "ADP",
     "virtual desktop",
     "sandbox",
   ],
-  authors: [{ name: "E2B", url: "https://e2b.dev" }],
+  authors: [{ name: "Invoke", url: "https://github.com/Invoke-Pub-Sec-AI" }],
+  icons: {
+    icon: "/invoke-logo.png",
+  },
 };
 
 export default function RootLayout({

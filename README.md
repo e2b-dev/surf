@@ -1,11 +1,10 @@
-![E2B Surf Preview Light](/readme-assets/surf-light.png#gh-light-mode-only)
-![E2B Surf Preview Dark](/readme-assets/surf-dark.png#gh-dark-mode-only)
+![Invoke logo](/public/invoke-logo.png)
 
-# Surf - Paychex Flex to ADP Computer Use Agent
+# Invoke - Paychex Flex to ADP Computer Use Agent
 
-A Next.js application that launches a Paychex Flex to ADP migration discovery flow in a virtual desktop environment. This project integrates [E2B's desktop sandbox](https://github.com/e2b-dev/desktop) with OpenAI's API to create an AI agent that can inspect Paychex report access through a virtual computer.
+A Next.js application that launches an Invoke Paychex Flex to ADP migration discovery flow in a virtual desktop environment. This project integrates a desktop sandbox with OpenAI's API to create an AI agent that can inspect Paychex report access through a virtual computer.
 
-[E2B](https://e2b.dev) is an open source isolated virtual computer in the cloud made for AI use cases.
+Invoke uses an isolated virtual computer in the cloud for Paychex report-access discovery.
 
 ## Overview
 
@@ -26,14 +25,14 @@ The application uses Server-Sent Events (SSE) to stream AI responses and actions
 The application consists of several key components:
 
 1. **Frontend UI (Next.js)**: Provides the user interface with a virtual desktop view and chat interface
-2. [**E2B Desktop Sandbox**](https://github.com/e2b-dev/desktop): Creates and manages virtual desktop environments
+2. **Desktop Sandbox**: Creates and manages virtual desktop environments
 3. [**OpenAI Computer Use**](https://platform.openai.com/docs/guides/tools-computer-use): Processes user instructions and generates actions for the AI agent
 4. **Streaming API**: Handles real-time communication between the frontend and backend
 
 ### Core Flow
 
 1. The app auto-starts the Paychex Flex to ADP migration discovery flow
-2. E2B creates a virtual desktop and provides a URL for streaming
+2. The sandbox creates a virtual desktop and provides a URL for streaming
 3. The backend installs Chrome if needed and opens the Paychex portal
 4. Backend processes the fixed Paychex flow instructions using OpenAI's API
 5. AI guides login/MFA, verifies the selected company in the top right, and navigates left menu > Analytics and Reports > All Reports
@@ -52,7 +51,7 @@ Before starting, you'll need:
 
 1. **Clone the repository**
 ```bash
-git clone https://github.com/e2b-dev/surf
+git clone https://github.com/Invoke-Pub-Sec-AI/surf
 cd surf
 ```
 
@@ -150,6 +149,4 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 ## Support
 
 If you encounter any issues or have questions:
-- Check the [E2B Documentation](https://e2b.dev/docs)
-- Join the [E2B Discord](https://discord.gg/U7KEcGErtQ)
-- Open an [issue](https://github.com/e2b-dev/computer-use-app/issues)
+- Open an [issue](https://github.com/Invoke-Pub-Sec-AI/surf/issues)

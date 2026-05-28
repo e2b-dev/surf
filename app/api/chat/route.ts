@@ -30,7 +30,7 @@ export async function POST(request: Request) {
   const apiKey = process.env.E2B_API_KEY;
 
   if (!apiKey) {
-    return new Response("E2B API key not found", { status: 500 });
+    return new Response("Sandbox API key not found", { status: 500 });
   }
 
   let desktop: Sandbox | undefined;

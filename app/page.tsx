@@ -24,7 +24,6 @@ import Link from "next/link";
 import Logo from "@/components/logo";
 import { RepoBanner } from "@/components/repo-banner";
 import { SANDBOX_TIMEOUT_MS } from "@/lib/config";
-import { Surfing } from "@/components/surfing";
 import {
   PAYCHEX_ADP_FLOW_PROMPT,
   PAYCHEX_FLOW_TITLE,
@@ -234,14 +233,7 @@ export default function Home() {
               target="_blank"
             >
               <Logo width={20} height={20} className="sm:w-6 sm:h-6" />
-              <h1 className="whitespace-pre">Surf - Computer Agent by </h1>
-            </Link>
-            <Link
-              href="https://e2b.dev"
-              className="underline decoration-accent decoration-1 underline-offset-2 text-accent"
-              target="_blank"
-            >
-              E2B
+              <h1 className="whitespace-pre">Invoke - Paychex ADP Agent</h1>
             </Link>
           </div>
 
@@ -411,12 +403,12 @@ export default function Home() {
               />
             ) : (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
-                <Surfing className="text-[7px] leading-[7px] text-accent font-bold" />
+                <Logo width={96} height={96} className="h-24 w-24" />
                 <h1 className="text-center text-fg-300 max-w-xs">
                   <span className="text-fg">{PAYCHEX_FLOW_TITLE}</span> starts
                   a new{" "}
                   <a
-                    href="https://github.com/e2b-dev/desktop"
+                    href="https://github.com/Invoke-Pub-Sec-AI/surf"
                     className="underline inline-flex items-center gap-1 decoration-accent decoration-1 underline-offset-2 text-accent"
                     target="_blank"
                   >
