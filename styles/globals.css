@@ -10,6 +10,11 @@
     @apply border-border ring-ring;
   }
 
+  html,
+  body {
+    @apply h-full overflow-hidden;
+  }
+
   body {
     @apply bg-gradient-to-tr from-bg to-bg-100 text-fg tracking-wide antialiased;
   }

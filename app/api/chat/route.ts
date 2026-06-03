@@ -4,11 +4,12 @@ import {
   ComputerInteractionStreamerFacade,
   createStreamingResponse,
 } from "@/lib/streaming";
-import { SANDBOX_TIMEOUT_MS } from "@/lib/config";
+import { getSandboxProviderTimeoutMs, SANDBOX_TIMEOUT_MS } from "@/lib/config";
 import { OpenAIComputerStreamer } from "@/lib/streaming/openai";
 import { logError } from "@/lib/logger";
 import { PAYCHEX_LOGIN_URL } from "@/lib/paychex-flow";
 import { preparePaychexSandbox } from "@/lib/sandbox-bootstrap";
+import { withScaledStreamResize } from "@/lib/sandbox-stream";
 import { getCurrentUser, getInitializedDatabase } from "@/lib/auth";
 import {
   createSandboxRecord,
@@ -62,18 +63,22 @@ export async function POST(request: Request) {
       const newSandbox = await Sandbox.create({
         resolution,
         dpi: 96,
-        timeoutMs: SANDBOX_TIMEOUT_MS,
+        timeoutMs: getSandboxProviderTimeoutMs(SANDBOX_TIMEOUT_MS),
       });
 
       await newSandbox.stream.start();
 
       activeSandboxId = newSandbox.sandboxId;
-      vncUrl = newSandbox.stream.getUrl();
+      vncUrl = withScaledStreamResize(
+        newSandbox.stream.getUrl({ resize: "scale" })
+      );
       desktop = newSandbox;
       await createSandboxRecord(db, {
         userId: user.id,
         sandboxId: activeSandboxId,
         vncUrl,
+        timeoutMs: SANDBOX_TIMEOUT_MS,
+        expiresAt: new Date(Date.now() + SANDBOX_TIMEOUT_MS),
       });
     } else {
       desktop = await Sandbox.connect(activeSandboxId);
@@ -84,7 +89,7 @@ export async function POST(request: Request) {
       return new Response("Failed to connect to sandbox", { status: 500 });
     }
 
-    desktop.setTimeout(SANDBOX_TIMEOUT_MS);
+    await desktop.setTimeout(getSandboxProviderTimeoutMs(SANDBOX_TIMEOUT_MS));
 
     try {
       const streamer: ComputerInteractionStreamerFacade =

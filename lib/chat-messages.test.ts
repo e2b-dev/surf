@@ -5,10 +5,12 @@ import {
   appendActionMessageForDisplay,
   appendSystemMessageForDisplay,
   appendUserMessageForDisplay,
+  getVisibleChatMessages,
 } from "./chat-messages";
 import type {
   ActionChatMessage,
   AssistantChatMessage,
+  ChatMessage,
   SystemChatMessage,
   UserChatMessage,
 } from "@/types/chat";
@@ -84,6 +86,46 @@ test("system error messages remain visible in chat", () => {
   };
 
   assert.deepEqual(appendSystemMessageForDisplay([], errorMessage), [
+    errorMessage,
+  ]);
+});
+
+test("visible chat messages exclude action messages as a display guard", () => {
+  const assistantMessage: AssistantChatMessage = {
+    role: "assistant",
+    id: "assistant-message",
+    content: "I found the payroll report.",
+  };
+  const actionMessage: ActionChatMessage = {
+    role: "action",
+    id: "action-click",
+    action: {
+      type: "click",
+      button: "left",
+      x: 100,
+      y: 200,
+    } as ActionChatMessage["action"],
+  };
+  const errorMessage: SystemChatMessage = {
+    role: "system",
+    id: "system-error",
+    content: "The model request failed.",
+    isError: true,
+  };
+  const progressMessage: SystemChatMessage = {
+    role: "system",
+    id: "system-progress",
+    content: "Task completed",
+  };
+  const messages: ChatMessage[] = [
+    assistantMessage,
+    actionMessage,
+    progressMessage,
+    errorMessage,
+  ];
+
+  assert.deepEqual(getVisibleChatMessages(messages), [
+    assistantMessage,
     errorMessage,
   ]);
 });

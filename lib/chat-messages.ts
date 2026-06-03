@@ -34,3 +34,17 @@ export function appendSystemMessageForDisplay(
 
   return [...messages, systemMessage];
 }
+
+export function getVisibleChatMessages(messages: ChatMessage[]): ChatMessage[] {
+  return messages.filter((message) => {
+    if (message.role === "action") {
+      return false;
+    }
+
+    if (message.role === "system" && !message.isError) {
+      return false;
+    }
+
+    return true;
+  });
+}

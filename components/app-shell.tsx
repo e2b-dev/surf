@@ -6,14 +6,20 @@ import {
   SunIcon,
   Timer,
   Power,
+  Download,
   Menu,
   X,
-  ArrowUpRight,
   LogOut,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
-import { increaseTimeout, logoutAction, stopSandboxAction } from "@/app/actions";
+import {
+  ensureSandboxAction,
+  increaseTimeout,
+  logoutAction,
+  resizeSandboxDisplayAction,
+  stopSandboxAction,
+} from "@/app/actions";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChatList } from "@/components/chat/message-list";
 import { ChatInput } from "@/components/chat/input";
@@ -23,17 +29,26 @@ import { Button } from "@/components/ui/button";
 import { Loader, AssemblyLoader } from "@/components/loader";
 import Link from "next/link";
 import Logo from "@/components/logo";
-import { RepoBanner } from "@/components/repo-banner";
-import { SANDBOX_TIMEOUT_MS } from "@/lib/config";
 import {
-  PAYCHEX_ADP_FLOW_PROMPT,
-  PAYCHEX_FLOW_TITLE,
-  PAYCHEX_LOGIN_URL,
-} from "@/lib/paychex-flow";
+  SANDBOX_PROVIDER_MAX_TIMEOUT_MS,
+  SANDBOX_TIMEOUT_MS,
+  SANDBOX_TIMEOUT_OPTIONS,
+} from "@/lib/config";
+import { normalizeSandboxStreamResolution } from "@/lib/sandbox-stream";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { PAYCHEX_FLOW_TITLE } from "@/lib/paychex-flow";
 
 interface AppShellProps {
   userEmail: string;
 }
+
+const SANDBOX_LEASE_RENEWAL_INTERVAL_MS = 45 * 60 * 1000;
 
 export default function AppShell({ userEmail }: AppShellProps) {
   const [sandboxId, setSandboxId] = useState<string | null>(null);
@@ -43,11 +58,23 @@ export default function AppShell({ userEmail }: AppShellProps) {
   const [timeRemaining, setTimeRemaining] = useState<number>(
     SANDBOX_TIMEOUT_MS / 1000
   );
+  const [expiresAtMs, setExpiresAtMs] = useState<number>(
+    Date.now() + SANDBOX_TIMEOUT_MS
+  );
+  const [selectedTimeoutMs, setSelectedTimeoutMs] = useState<number>(
+    SANDBOX_TIMEOUT_MS
+  );
   const [isTabVisible, setIsTabVisible] = useState<boolean>(true);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const iFrameWrapperRef = useRef<HTMLDivElement>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const hasAutoStartedRef = useRef(false);
+  const lastLeaseRenewedAtRef = useRef<number | null>(null);
+  const leaseRenewalInFlightRef = useRef(false);
+  const lastDisplayResizeRef = useRef<string | null>(null);
+  const displayResizeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
 
   const {
     messages,
@@ -84,7 +111,11 @@ export default function AppShell({ userEmail }: AppShellProps) {
           setSandboxId(null);
           setVncUrl(null);
           clearMessages();
+          setSelectedTimeoutMs(SANDBOX_TIMEOUT_MS);
           setTimeRemaining(SANDBOX_TIMEOUT_MS / 1000);
+          setExpiresAtMs(Date.now() + SANDBOX_TIMEOUT_MS);
+          lastLeaseRenewedAtRef.current = null;
+          lastDisplayResizeRef.current = null;
           toast("Sandbox instance stopped");
         } else {
           toast.error("Failed to stop sandbox instance");
@@ -96,64 +127,138 @@ export default function AppShell({ userEmail }: AppShellProps) {
     }
   };
 
-  const handleIncreaseTimeout = useCallback(async () => {
+  const getSandboxResolution = useCallback((): [number, number] => {
+    const width = iFrameWrapperRef.current?.clientWidth ?? window.innerWidth;
+    const height =
+      iFrameWrapperRef.current?.clientHeight ?? window.innerHeight;
+
+    return normalizeSandboxStreamResolution([width, height]);
+  }, []);
+
+  const resizeSandboxDisplay = useCallback(
+    async (resolution = getSandboxResolution()) => {
+      if (!sandboxId) return;
+
+      const normalizedResolution = normalizeSandboxStreamResolution(resolution);
+      const resizeKey = normalizedResolution.join("x");
+      if (lastDisplayResizeRef.current === resizeKey) return;
+
+      lastDisplayResizeRef.current = resizeKey;
+
+      const result = await resizeSandboxDisplayAction(
+        sandboxId,
+        normalizedResolution
+      );
+
+      if (!result.ok) {
+        console.error(result.error);
+      }
+    },
+    [getSandboxResolution, sandboxId]
+  );
+
+  const handleIncreaseTimeout = useCallback(
+    async (
+      timeoutMs = selectedTimeoutMs,
+      options: { resetDisplay?: boolean; showToast?: boolean } = {}
+    ) => {
+      if (!sandboxId) return false;
+
+      const { resetDisplay = true, showToast = true } = options;
+
+      try {
+        const result = await increaseTimeout(sandboxId, timeoutMs);
+        if (result.ok) {
+          lastLeaseRenewedAtRef.current = Date.now();
+          setExpiresAtMs(Date.parse(result.expiresAt));
+          if (resetDisplay) {
+            setTimeRemaining(result.timeRemainingSeconds);
+          }
+          if (showToast) {
+            toast.success("Instance time updated");
+          }
+          return true;
+        } else {
+          if (showToast) {
+            toast.error("Failed to update instance time");
+          }
+          return false;
+        }
+      } catch (error) {
+        console.error("Failed to increase time:", error);
+        if (showToast) {
+          toast.error("Failed to increase time");
+        }
+        return false;
+      }
+    },
+    [sandboxId, selectedTimeoutMs]
+  );
+
+  const handleTimeoutChange = (value: string) => {
+    const timeoutMs = Number.parseInt(value, 10);
+
+    setSelectedTimeoutMs(timeoutMs);
+    if (sandboxId) {
+      handleIncreaseTimeout(timeoutMs);
+    }
+  };
+
+  const handleExportDownloads = () => {
     if (!sandboxId) return;
 
-    try {
-      await increaseTimeout(sandboxId);
-      setTimeRemaining(SANDBOX_TIMEOUT_MS / 1000);
-      toast.success("Instance time increased");
-    } catch (error) {
-      console.error("Failed to increase time:", error);
-      toast.error("Failed to increase time");
-    }
-  }, [sandboxId]);
+    window.open(`/api/sandbox/${sandboxId}/downloads`, "_blank");
+  };
 
   const onSubmit = (e: React.FormEvent) => {
     const content = handleSubmit(e);
     if (content) {
-      const width =
-        iFrameWrapperRef.current?.clientWidth ||
-        (window.innerWidth < 768 ? window.innerWidth - 32 : 1024);
-      const height =
-        iFrameWrapperRef.current?.clientHeight ||
-        (window.innerWidth < 768
-          ? Math.min(window.innerHeight * 0.4, 400)
-          : 768);
-
       sendMessage({
         content,
         sandboxId: sandboxId || undefined,
         environment: "linux",
-        resolution: [width, height],
+        resolution: getSandboxResolution(),
       });
     }
   };
 
-  const startPaychexFlow = useCallback(() => {
-    const width =
-      iFrameWrapperRef.current?.clientWidth ||
-      (window.innerWidth < 768 ? window.innerWidth - 32 : 1024);
-    const height =
-      iFrameWrapperRef.current?.clientHeight ||
-      (window.innerWidth < 768 ? Math.min(window.innerHeight * 0.4, 400) : 768);
-
-    sendMessage({
-      content: PAYCHEX_ADP_FLOW_PROMPT,
-      sandboxId: sandboxId || undefined,
-      environment: "linux",
-      resolution: [width, height],
-      hidden: true,
-      bootstrap: "paychex",
-    });
-  }, [sandboxId, sendMessage]);
-
   const handleSandboxCreated = (newSandboxId: string, newVncUrl: string) => {
     setSandboxId(newSandboxId);
     setVncUrl(newVncUrl);
+    setSelectedTimeoutMs(SANDBOX_TIMEOUT_MS);
     setTimeRemaining(SANDBOX_TIMEOUT_MS / 1000);
+    setExpiresAtMs(Date.now() + SANDBOX_TIMEOUT_MS);
+    lastLeaseRenewedAtRef.current = Date.now();
+    lastDisplayResizeRef.current = null;
     toast.success("Sandbox instance created");
   };
+
+  const startOrResumeSandbox = useCallback(async () => {
+    setIsLoading(true);
+
+    try {
+      const result = await ensureSandboxAction({
+        resolution: getSandboxResolution(),
+      });
+
+      if (result.ok) {
+        setSandboxId(result.sandboxId);
+        setVncUrl(result.vncUrl);
+        setSelectedTimeoutMs(result.timeoutMs);
+        setTimeRemaining(result.timeRemainingSeconds);
+        setExpiresAtMs(Date.parse(result.expiresAt));
+        lastLeaseRenewedAtRef.current = Date.now();
+        lastDisplayResizeRef.current = null;
+      } else {
+        toast.error(result.error);
+      }
+    } catch (error) {
+      console.error("Failed to start or resume sandbox:", error);
+      toast.error("Failed to start sandbox");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [getSandboxResolution]);
 
   const handleClearChat = () => {
     clearMessages();
@@ -191,22 +296,58 @@ export default function AppShell({ userEmail }: AppShellProps) {
     </div>
   );
 
+  const formatTimeRemaining = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = seconds % 60;
+
+    return `${hours}h ${minutes.toString().padStart(2, "0")}m ${remainingSeconds
+      .toString()
+      .padStart(2, "0")}s`;
+  };
+
   useEffect(() => {
     if (!sandboxId) return;
+    const updateTimeRemaining = () => {
+      setTimeRemaining(Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000)));
+    };
+
+    updateTimeRemaining();
     const interval = setInterval(() => {
-      if (isTabVisible) {
-        setTimeRemaining((prev) => (prev > 0 ? prev - 1 : 0));
-      }
+      updateTimeRemaining();
     }, 1000);
     return () => clearInterval(interval);
-  }, [sandboxId, isTabVisible]);
+  }, [sandboxId, expiresAtMs]);
+
+  useEffect(() => {
+    if (!sandboxId || selectedTimeoutMs <= SANDBOX_PROVIDER_MAX_TIMEOUT_MS) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const lastRenewedAt = lastLeaseRenewedAtRef.current;
+      if (
+        !lastRenewedAt ||
+        leaseRenewalInFlightRef.current ||
+        Date.now() - lastRenewedAt < SANDBOX_LEASE_RENEWAL_INTERVAL_MS
+      ) {
+        return;
+      }
+
+      leaseRenewalInFlightRef.current = true;
+      handleIncreaseTimeout(selectedTimeoutMs, {
+        resetDisplay: false,
+        showToast: false,
+      }).finally(() => {
+        leaseRenewalInFlightRef.current = false;
+      });
+    }, 60_000);
+
+    return () => clearInterval(interval);
+  }, [handleIncreaseTimeout, sandboxId, selectedTimeoutMs]);
 
   useEffect(() => {
     if (!sandboxId) return;
-
-    if (timeRemaining === 10 && isTabVisible) {
-      handleIncreaseTimeout();
-    }
 
     if (timeRemaining === 0) {
       setSandboxId(null);
@@ -214,15 +355,17 @@ export default function AppShell({ userEmail }: AppShellProps) {
       clearMessages();
       stopGeneration();
       toast.error("Instance time expired");
+      setSelectedTimeoutMs(SANDBOX_TIMEOUT_MS);
       setTimeRemaining(SANDBOX_TIMEOUT_MS / 1000);
+      setExpiresAtMs(Date.now() + SANDBOX_TIMEOUT_MS);
+      lastLeaseRenewedAtRef.current = null;
+      lastDisplayResizeRef.current = null;
     }
   }, [
     timeRemaining,
     sandboxId,
     stopGeneration,
     clearMessages,
-    isTabVisible,
-    handleIncreaseTimeout,
   ]);
 
   useEffect(() => {
@@ -235,15 +378,46 @@ export default function AppShell({ userEmail }: AppShellProps) {
     if (hasAutoStartedRef.current || chatLoading || sandboxId) return;
 
     hasAutoStartedRef.current = true;
-    startPaychexFlow();
-  }, [chatLoading, sandboxId, startPaychexFlow]);
+    startOrResumeSandbox();
+  }, [chatLoading, sandboxId, startOrResumeSandbox]);
+
+  useEffect(() => {
+    const wrapper = iFrameWrapperRef.current;
+    if (!sandboxId || !vncUrl || !wrapper) return;
+
+    const scheduleDisplayResize = () => {
+      if (displayResizeTimeoutRef.current) {
+        clearTimeout(displayResizeTimeoutRef.current);
+      }
+
+      displayResizeTimeoutRef.current = setTimeout(() => {
+        void resizeSandboxDisplay(getSandboxResolution());
+      }, 250);
+    };
+
+    scheduleDisplayResize();
+
+    const observer = new ResizeObserver(scheduleDisplayResize);
+    observer.observe(wrapper);
+    window.addEventListener("resize", scheduleDisplayResize);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", scheduleDisplayResize);
+      if (displayResizeTimeoutRef.current) {
+        clearTimeout(displayResizeTimeoutRef.current);
+        displayResizeTimeoutRef.current = null;
+      }
+    };
+  }, [getSandboxResolution, resizeSandboxDisplay, sandboxId, vncUrl]);
 
   return (
-    <div className="w-full flex justify-center items-center h-dvh overflow-hidden p-2 sm:p-4 md:p-8 md:pb-10">
+    <div className="h-dvh w-screen overflow-hidden bg-bg">
       <Frame
+        showChrome={false}
         classNames={{
-          wrapper: "w-full max-lg:h-full lg:aspect-[18/9] max-w-[2000px]",
-          frame: "flex flex-col h-full overflow-hidden",
+          wrapper: "h-full w-full pb-0",
+          frame: "flex h-full flex-col overflow-hidden rounded-none border-0 shadow-none",
         }}
       >
         <div className="border-b w-full px-2 sm:px-3 py-2 flex items-center justify-between h-auto">
@@ -276,7 +450,6 @@ export default function AppShell({ userEmail }: AppShellProps) {
           <div className="hidden lg:flex items-center gap-2">
             <AccountControls />
             <ThemeToggle />
-            <RepoBanner />
 
             <AnimatePresence>
               {sandboxId && (
@@ -287,15 +460,7 @@ export default function AppShell({ userEmail }: AppShellProps) {
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.2 }}
                 >
-                  <Button
-                    onClick={handleIncreaseTimeout}
-                    variant="muted"
-                    title={
-                      isTabVisible
-                        ? "Increase Time"
-                        : "Timer paused (tab not active)"
-                    }
-                  >
+                  <Button variant="muted" title="Sandbox time remaining">
                     <Timer
                       className={`h-3 w-3 ${!isTabVisible ? "text-fg-400" : ""
                         }`}
@@ -304,10 +469,33 @@ export default function AppShell({ userEmail }: AppShellProps) {
                       className={`text-xs font-medium ${!isTabVisible ? "text-fg-400" : ""
                         }`}
                     >
-                      {Math.floor(timeRemaining / 60)}:
-                      {(timeRemaining % 60).toString().padStart(2, "0")}
-                      {!isTabVisible && " (paused)"}
+                      {formatTimeRemaining(timeRemaining)}
                     </span>
+                  </Button>
+
+                  <Select
+                    value={String(selectedTimeoutMs)}
+                    onValueChange={handleTimeoutChange}
+                  >
+                    <SelectTrigger className="h-8 w-36 text-xs" title="Set sandbox lifetime">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SANDBOX_TIMEOUT_OPTIONS.map((option) => (
+                        <SelectItem key={option.ms} value={String(option.ms)}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Button
+                    onClick={handleExportDownloads}
+                    variant="muted"
+                    title="Download Paychex files from sandbox"
+                  >
+                    <Download className="w-3 h-3" />
+                    Downloads
                   </Button>
 
                   <Button
@@ -334,14 +522,9 @@ export default function AppShell({ userEmail }: AppShellProps) {
                   transition={{ duration: 0.2 }}
                 >
                   <Button
-                    onClick={handleIncreaseTimeout}
                     variant="muted"
                     size="sm"
-                    title={
-                      isTabVisible
-                        ? "Increase Time"
-                        : "Timer paused (tab not active)"
-                    }
+                    title="Sandbox time remaining"
                     className="px-1.5"
                   >
                     <Timer
@@ -352,9 +535,37 @@ export default function AppShell({ userEmail }: AppShellProps) {
                       className={`text-xs font-medium ml-1 ${!isTabVisible ? "text-fg-400" : ""
                         }`}
                     >
-                      {Math.floor(timeRemaining / 60)}:
-                      {(timeRemaining % 60).toString().padStart(2, "0")}
+                      {formatTimeRemaining(timeRemaining)}
                     </span>
+                  </Button>
+
+                  <Select
+                    value={String(selectedTimeoutMs)}
+                    onValueChange={handleTimeoutChange}
+                  >
+                    <SelectTrigger
+                      className="h-7 w-24 px-1.5 text-xs"
+                      title="Set sandbox lifetime"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SANDBOX_TIMEOUT_OPTIONS.map((option) => (
+                        <SelectItem key={option.ms} value={String(option.ms)}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Button
+                    onClick={handleExportDownloads}
+                    variant="muted"
+                    size="sm"
+                    title="Download Paychex files from sandbox"
+                    className="px-1.5"
+                  >
+                    <Download className="w-3 h-3" />
                   </Button>
 
                   <Button
@@ -383,7 +594,6 @@ export default function AppShell({ userEmail }: AppShellProps) {
               <div className="flex items-center gap-2">
                 <AccountControls />
                 <ThemeToggle />
-                <RepoBanner />
               </div>
             </motion.div>
           )}
@@ -392,7 +602,7 @@ export default function AppShell({ userEmail }: AppShellProps) {
         <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
           <div
             ref={iFrameWrapperRef}
-            className="relative w-full lg:flex-1 h-[40vh] lg:h-auto overflow-hidden"
+            className="relative w-full lg:flex-[1.65] h-[40vh] lg:h-auto overflow-hidden"
           >
             {isLoading || (chatLoading && !sandboxId) ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
@@ -421,29 +631,21 @@ export default function AppShell({ userEmail }: AppShellProps) {
               <iframe
                 ref={iframeRef}
                 src={vncUrl}
-                className="w-full h-full"
+                className="h-full w-full border-0"
                 allow="clipboard-read; clipboard-write"
+                scrolling="no"
               />
             ) : (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
                 <Logo width={96} height={96} className="h-24 w-24" />
-                <h1 className="text-center text-fg-300 max-w-xs">
-                  <span className="text-fg">{PAYCHEX_FLOW_TITLE}</span> starts
-                  a new{" "}
-                  <a
-                    href="https://github.com/Invoke-Pub-Sec-AI/surf"
-                    className="underline inline-flex items-center gap-1 decoration-accent decoration-1 underline-offset-2 text-accent"
-                    target="_blank"
-                  >
-                    sandbox <ArrowUpRight className="size-4" />
-                  </a>
-                  {" "}and opens Paychex Flex in Chrome at {PAYCHEX_LOGIN_URL}.
+                <h1 className="text-center text-fg max-w-xs">
+                  {PAYCHEX_FLOW_TITLE}
                 </h1>
               </div>
             )}
           </div>
 
-          <div className="flex-1 flex flex-col relative border-t lg:border-t-0 lg:border-l overflow-hidden h-[60vh] lg:h-auto lg:max-w-xl">
+          <div className="flex flex-col relative border-t lg:border-t-0 lg:border-l overflow-hidden h-[60vh] lg:h-auto lg:w-[28rem] lg:max-w-[32rem] lg:shrink-0">
             <ChatList className="flex-1" messages={messages} />
 
             <ChatInput
@@ -452,7 +654,7 @@ export default function AppShell({ userEmail }: AppShellProps) {
               onSubmit={onSubmit}
               isLoading={chatLoading}
               onStop={stopGeneration}
-              disabled={false}
+              disabled={isLoading && !sandboxId}
               className="absolute bottom-3 left-3 right-3"
             />
           </div>

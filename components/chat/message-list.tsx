@@ -3,6 +3,7 @@
 import React, { useRef, useEffect } from "react";
 import { ChatMessage } from "@/components/chat/message";
 import { ChatMessage as ChatMessageType } from "@/types/chat";
+import { getVisibleChatMessages } from "@/lib/chat-messages";
 import { cn } from "@/lib/utils";
 
 interface ChatListProps {
@@ -13,6 +14,7 @@ interface ChatListProps {
 export function ChatList({ messages, className }: ChatListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const visibleMessages = getVisibleChatMessages(messages);
 
   useEffect(() => {
     if (messagesEndRef.current) {
@@ -25,8 +27,8 @@ export function ChatList({ messages, className }: ChatListProps) {
       ref={containerRef}
       className={cn("overflow-y-auto p-4 pb-22", "space-y-4", className)}
     >
-      {messages.length !== 0 &&
-        messages.map((message) => (
+      {visibleMessages.length !== 0 &&
+        visibleMessages.map((message) => (
           <ChatMessage
             key={message.id}
             message={message}

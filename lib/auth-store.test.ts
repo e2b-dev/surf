@@ -8,7 +8,10 @@ import {
   initializeDatabase,
   createSession,
   createSandboxRecord,
+  deleteSandboxRecordForUser,
+  getLatestActiveSandboxForUser,
   getSandboxForUser,
+  touchSandboxForUser,
   verifyPassword,
 } from "./auth-store";
 
@@ -56,6 +59,81 @@ test("sandbox records are only returned for their owning user", async (t) => {
     "https://vnc-a.example.test"
   );
   assert.equal(await getSandboxForUser(db, userB.id, "sandbox-a"), null);
+});
+
+test("latest active sandbox is selected until its timer expires", async (t) => {
+  const db = createTestPool();
+  t.after(() => db.end());
+  await initializeDatabase(db);
+
+  const user = await createUser(db, "resume@example.com", "password");
+  const expiredAt = new Date(Date.now() - 60_000);
+  const activeExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
+  const latestExpiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000);
+
+  await createSandboxRecord(db, {
+    userId: user.id,
+    sandboxId: "expired-sandbox",
+    vncUrl: "https://expired.example.test",
+    timeoutMs: 60 * 60 * 1000,
+    expiresAt: expiredAt,
+  });
+  await createSandboxRecord(db, {
+    userId: user.id,
+    sandboxId: "active-sandbox",
+    vncUrl: "https://active.example.test",
+    timeoutMs: 60 * 60 * 1000,
+    expiresAt: activeExpiresAt,
+  });
+  await touchSandboxForUser(db, user.id, "active-sandbox");
+  await createSandboxRecord(db, {
+    userId: user.id,
+    sandboxId: "latest-sandbox",
+    vncUrl: "https://latest.example.test",
+    timeoutMs: 8 * 60 * 60 * 1000,
+    expiresAt: latestExpiresAt,
+  });
+  await touchSandboxForUser(db, user.id, "latest-sandbox");
+
+  const latest = await getLatestActiveSandboxForUser(db, user.id);
+
+  assert.equal(latest?.sandboxId, "latest-sandbox");
+  assert.equal(latest?.timeoutMs, 8 * 60 * 60 * 1000);
+  assert.equal(latest?.expiresAt.getTime(), latestExpiresAt.getTime());
+});
+
+test("sandbox records can update timer state and be deleted for a user", async (t) => {
+  const db = createTestPool();
+  t.after(() => db.end());
+  await initializeDatabase(db);
+
+  const userA = await createUser(db, "owner@example.com", "password");
+  const userB = await createUser(db, "other@example.com", "password");
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+  await createSandboxRecord(db, {
+    userId: userA.id,
+    sandboxId: "sandbox-to-update",
+    vncUrl: "https://sandbox.example.test",
+  });
+  await touchSandboxForUser(db, userA.id, "sandbox-to-update", {
+    timeoutMs: 24 * 60 * 60 * 1000,
+    expiresAt,
+  });
+
+  const updated = await getSandboxForUser(db, userA.id, "sandbox-to-update");
+  assert.equal(updated?.timeoutMs, 24 * 60 * 60 * 1000);
+  assert.equal(updated?.expiresAt.getTime(), expiresAt.getTime());
+
+  assert.equal(
+    await deleteSandboxRecordForUser(db, userB.id, "sandbox-to-update"),
+    false
+  );
+  assert.equal(
+    await deleteSandboxRecordForUser(db, userA.id, "sandbox-to-update"),
+    true
+  );
+  assert.equal(await getSandboxForUser(db, userA.id, "sandbox-to-update"), null);
 });
 
 test("sessions map opaque tokens back to users", async (t) => {

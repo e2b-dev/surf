@@ -3,6 +3,7 @@ import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypt
 import type { AppDatabase } from "./db";
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
+const DEFAULT_SANDBOX_RECORD_TIMEOUT_MS = 60 * 60 * 1000;
 
 export interface UserRecord {
   id: string;
@@ -20,6 +21,8 @@ export interface SandboxRecord {
   sandboxId: string;
   userId: string;
   vncUrl: string;
+  timeoutMs: number;
+  expiresAt: Date;
   createdAt: Date;
   lastSeenAt: Date;
 }
@@ -42,6 +45,8 @@ interface SandboxRow {
   sandbox_id: string;
   user_id: string;
   vnc_url: string;
+  requested_timeout_ms: number;
+  expires_at: Date | string;
   created_at: Date | string;
   last_seen_at: Date | string;
 }
@@ -66,12 +71,36 @@ export async function initializeDatabase(db: AppDatabase): Promise<void> {
       sandbox_id text primary key,
       user_id text not null references users(id) on delete cascade,
       vnc_url text not null,
+      requested_timeout_ms integer not null default 3600000,
+      expires_at timestamptz not null default (now() + interval '1 hour'),
       created_at timestamptz not null default now(),
       last_seen_at timestamptz not null default now()
     );
 
     create index if not exists sessions_user_id_idx on sessions(user_id);
     create index if not exists sandboxes_user_id_idx on sandboxes(user_id);
+  `);
+
+  await db.query(`
+    alter table sandboxes
+      add column if not exists requested_timeout_ms integer;
+
+    alter table sandboxes
+      add column if not exists expires_at timestamptz;
+
+    update sandboxes
+      set requested_timeout_ms = 3600000
+      where requested_timeout_ms is null;
+
+    update sandboxes
+      set expires_at = last_seen_at + interval '1 hour'
+      where expires_at is null;
+
+    alter table sandboxes
+      alter column requested_timeout_ms set default 3600000,
+      alter column requested_timeout_ms set not null,
+      alter column expires_at set default (now() + interval '1 hour'),
+      alter column expires_at set not null;
   `);
 
   await seedDefaultAdmin(db);
@@ -183,17 +212,28 @@ export async function deleteSession(
 
 export async function createSandboxRecord(
   db: AppDatabase,
-  input: { userId: string; sandboxId: string; vncUrl: string }
+  input: {
+    userId: string;
+    sandboxId: string;
+    vncUrl: string;
+    timeoutMs?: number;
+    expiresAt?: Date;
+  }
 ): Promise<SandboxRecord> {
+  const timeoutMs = input.timeoutMs ?? DEFAULT_SANDBOX_RECORD_TIMEOUT_MS;
+  const expiresAt =
+    input.expiresAt ?? new Date(Date.now() + DEFAULT_SANDBOX_RECORD_TIMEOUT_MS);
   const { rows } = await db.query<SandboxRow>(
-    `insert into sandboxes (sandbox_id, user_id, vnc_url)
-     values ($1, $2, $3)
+    `insert into sandboxes (sandbox_id, user_id, vnc_url, requested_timeout_ms, expires_at)
+     values ($1, $2, $3, $4, $5)
      on conflict(sandbox_id) do update set
        user_id = excluded.user_id,
        vnc_url = excluded.vnc_url,
+       requested_timeout_ms = excluded.requested_timeout_ms,
+       expires_at = excluded.expires_at,
        last_seen_at = now()
-     returning sandbox_id, user_id, vnc_url, created_at, last_seen_at`,
-    [input.sandboxId, input.userId, input.vncUrl]
+     returning sandbox_id, user_id, vnc_url, requested_timeout_ms, expires_at, created_at, last_seen_at`,
+    [input.sandboxId, input.userId, input.vncUrl, timeoutMs, expiresAt]
   );
 
   return mapSandbox(rows[0]);
@@ -202,11 +242,17 @@ export async function createSandboxRecord(
 export async function touchSandboxForUser(
   db: AppDatabase,
   userId: string,
-  sandboxId: string
+  sandboxId: string,
+  timer?: { timeoutMs?: number; expiresAt?: Date }
 ): Promise<boolean> {
   const result = await db.query(
-    "update sandboxes set last_seen_at = now() where user_id = $1 and sandbox_id = $2",
-    [userId, sandboxId]
+    `update sandboxes
+     set
+       last_seen_at = now(),
+       requested_timeout_ms = coalesce($3, requested_timeout_ms),
+       expires_at = coalesce($4, expires_at)
+     where user_id = $1 and sandbox_id = $2`,
+    [userId, sandboxId, timer?.timeoutMs ?? null, timer?.expiresAt ?? null]
   );
 
   return (result.rowCount ?? 0) > 0;
@@ -218,7 +264,7 @@ export async function getSandboxForUser(
   sandboxId: string
 ): Promise<SandboxRecord | null> {
   const { rows } = await db.query<SandboxRow>(
-    `select sandbox_id, user_id, vnc_url, created_at, last_seen_at
+    `select sandbox_id, user_id, vnc_url, requested_timeout_ms, expires_at, created_at, last_seen_at
      from sandboxes
      where user_id = $1 and sandbox_id = $2`,
     [userId, sandboxId]
@@ -226,6 +272,36 @@ export async function getSandboxForUser(
   const row = rows[0];
 
   return row ? mapSandbox(row) : null;
+}
+
+export async function getLatestActiveSandboxForUser(
+  db: AppDatabase,
+  userId: string
+): Promise<SandboxRecord | null> {
+  const { rows } = await db.query<SandboxRow>(
+    `select sandbox_id, user_id, vnc_url, requested_timeout_ms, expires_at, created_at, last_seen_at
+     from sandboxes
+     where user_id = $1 and expires_at > now()
+     order by last_seen_at desc, created_at desc
+     limit 1`,
+    [userId]
+  );
+  const row = rows[0];
+
+  return row ? mapSandbox(row) : null;
+}
+
+export async function deleteSandboxRecordForUser(
+  db: AppDatabase,
+  userId: string,
+  sandboxId: string
+): Promise<boolean> {
+  const result = await db.query(
+    "delete from sandboxes where user_id = $1 and sandbox_id = $2",
+    [userId, sandboxId]
+  );
+
+  return (result.rowCount ?? 0) > 0;
 }
 
 export function hashPassword(password: string): string {
@@ -273,6 +349,8 @@ function mapSandbox(row: SandboxRow): SandboxRecord {
     sandboxId: row.sandbox_id,
     userId: row.user_id,
     vncUrl: row.vnc_url,
+    timeoutMs: Number(row.requested_timeout_ms),
+    expiresAt: toDate(row.expires_at),
     createdAt: toDate(row.created_at),
     lastSeenAt: toDate(row.last_seen_at),
   };

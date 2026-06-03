@@ -7,16 +7,23 @@ interface FrameProps {
     wrapper?: string;
     frame?: string;
   };
+  showChrome?: boolean;
 }
 
-export default function Frame({ children, classNames }: FrameProps) {
+export default function Frame({
+  children,
+  classNames,
+  showChrome = true,
+}: FrameProps) {
   return (
     <div
       className={cn("relative flex h-fit w-fit pb-4.5", classNames?.wrapper)}
     >
-      <div className="absolute inset-x-[16px] top-1 bottom-0 h-auto w-auto rounded-xs border">
-        <Scanline />
-      </div>
+      {showChrome && (
+        <div className="absolute inset-x-[16px] top-1 bottom-0 h-auto w-auto rounded-xs border">
+          <Scanline />
+        </div>
+      )}
       <div
         className={cn(
           "bg-bg relative w-full rounded-xs border shadow-md",
