@@ -153,3 +153,84 @@ If you encounter any issues or have questions:
 - Check the [E2B Documentation](https://e2b.dev/docs)
 - Join the [E2B Discord](https://discord.gg/U7KEcGErtQ)
 - Open an [issue](https://github.com/e2b-dev/computer-use-app/issues)
+
+
+## FAQ
+
+### What is Surf?
+
+**Surf** is a Next.js application that integrates [E2B's desktop sandbox](https://github.com/e2b-dev/desktop) with [OpenAI's Computer Use API](https://platform.openai.com/docs/guides/tools-computer-use). It allows AI agents to interact with a virtual desktop environment through natural language instructions.
+
+| Feature | Description |
+|---------|-------------|
+| Virtual Desktop | E2B sandbox creates isolated desktop environments |
+| AI Agent | OpenAI processes instructions and generates actions |
+| SSE Streaming | Real-time streaming of AI responses and actions |
+| Chat Interface | Conversational UI for sending instructions |
+| Dark/Light Mode | Theme support for user preference |
+
+### How do I get started?
+
+1. Clone and install:
+```bash
+git clone https://github.com/e2b-dev/surf
+cd surf && npm install
+```
+
+2. Set up API keys in `.env.local`:
+```env
+E2B_API_KEY=your_e2b_api_key
+OPENAI_API_KEY=your_openai_api_key
+```
+
+3. Run the dev server:
+```bash
+npm run dev
+```
+
+4. Open http://localhost:3000 and click "Start new Sandbox"
+
+### What are the core components?
+
+| Component | Role |
+|-----------|------|
+| Frontend UI (Next.js) | Virtual desktop view + chat interface |
+| E2B Desktop Sandbox | Creates/manages virtual desktop environments |
+| OpenAI Computer Use | Processes instructions and generates actions |
+| Streaming API (SSE) | Real-time frontend-backend communication |
+
+### What dependencies does Surf use?
+
+| Dependency | Purpose |
+|------------|---------|
+| Next.js | React framework for frontend |
+| @e2b/desktop | SDK for desktop sandbox environments |
+| OpenAI SDK | API for AI interactions |
+| Tailwind CSS | Utility-first CSS styling |
+| Framer Motion | Animation library |
+
+### What API endpoints are available?
+
+| Endpoint | Function |
+|----------|----------|
+| /api/chat | Handles chat messages, streams AI responses |
+| createSandbox | Server action to create sandbox instance |
+| increaseTimeout | Extends sandbox timeout duration |
+| stopSandboxAction | Stops running sandbox instance |
+
+### Is Surf free and open source?
+
+Yes! Surf is **Apache 2.0 licensed**. You need an [E2B API key](https://e2b.dev/docs/getting-started/api-key) and [OpenAI API key](https://platform.openai.com/api-keys).
+
+### How can I contribute?
+
+Contributions welcome! Submit a Pull Request on GitHub.
+
+### Where can I get help?
+
+| Resource | Link |
+|----------|------|
+| E2B Documentation | e2b.dev/docs |
+| E2B Discord | discord.gg/U7KEcGErtQ |
+| GitHub Issues | github.com/e2b-dev/surf/issues |
+
