@@ -18,5 +18,9 @@ test("Paychex flow prompt is limited to reports access discovery", () => {
   assert.match(PAYCHEX_ADP_FLOW_PROMPT, /All Reports/i);
   assert.match(PAYCHEX_ADP_FLOW_PROMPT, /company.*top right/i);
   assert.match(PAYCHEX_ADP_FLOW_PROMPT, /missing.*reports access/i);
+  assert.match(
+    PAYCHEX_ADP_FLOW_PROMPT,
+    /We are missing permisions for this client, they need to enable the reports and analytics section/,
+  );
   assert.doesNotMatch(PAYCHEX_ADP_FLOW_PROMPT, /LibreOffice|Fibonacci|GitHub/i);
 });

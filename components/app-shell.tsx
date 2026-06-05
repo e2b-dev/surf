@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState, useEffect } from "react";
+import { useCallback, useRef, useState, useEffect, useMemo } from "react";
 import {
   MoonIcon,
   SunIcon,
@@ -10,15 +10,26 @@ import {
   Menu,
   X,
   LogOut,
+  Play,
+  Pause,
+  History,
+  Trash2,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import {
   ensureSandboxAction,
+  deleteAllSandboxesAction,
+  deleteSandboxAction,
   increaseTimeout,
+  listSandboxesAction,
   logoutAction,
+  pauseSandboxAction,
+  resumeLatestSandboxAction,
+  resumeSandboxAction,
   resizeSandboxDisplayAction,
   stopSandboxAction,
+  type SandboxSummary,
 } from "@/app/actions";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChatList } from "@/components/chat/message-list";
@@ -26,6 +37,7 @@ import { ChatInput } from "@/components/chat/input";
 import { useChat } from "@/lib/chat-context";
 import Frame from "@/components/frame";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Loader, AssemblyLoader } from "@/components/loader";
 import Link from "next/link";
 import Logo from "@/components/logo";
@@ -50,6 +62,14 @@ interface AppShellProps {
 
 const SANDBOX_LEASE_RENEWAL_INTERVAL_MS = 45 * 60 * 1000;
 
+type SandboxSession = {
+  sandboxId: string;
+  vncUrl: string;
+  timeoutMs: number;
+  expiresAt: string;
+  timeRemainingSeconds: number;
+};
+
 export default function AppShell({ userEmail }: AppShellProps) {
   const [sandboxId, setSandboxId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -68,6 +88,11 @@ export default function AppShell({ userEmail }: AppShellProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const iFrameWrapperRef = useRef<HTMLDivElement>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sandboxes, setSandboxes] = useState<SandboxSummary[]>([]);
+  const [hasLoadedSandboxes, setHasLoadedSandboxes] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [sandboxActionId, setSandboxActionId] = useState<string | null>(null);
+  const [isDeletingAllSandboxes, setIsDeletingAllSandboxes] = useState(false);
   const hasAutoStartedRef = useRef(false);
   const lastLeaseRenewedAtRef = useRef<number | null>(null);
   const leaseRenewalInFlightRef = useRef(false);
@@ -88,6 +113,61 @@ export default function AppShell({ userEmail }: AppShellProps) {
     onSandboxCreated,
   } = useChat();
 
+  const resumableSandboxes = useMemo(
+    () =>
+      sandboxes.filter(
+        (sandbox) =>
+          sandbox.state === "running" || sandbox.state === "paused"
+      ),
+    [sandboxes]
+  );
+  const latestResumableSandbox = resumableSandboxes[0];
+
+  const refreshSandboxes = useCallback(async () => {
+    try {
+      const result = await listSandboxesAction();
+      if (result.ok) {
+        setSandboxes(result.sandboxes);
+      } else {
+        toast.error(result.error);
+      }
+    } catch (error) {
+      console.error("Failed to refresh sandboxes:", error);
+      toast.error("Failed to load sandboxes");
+    } finally {
+      setHasLoadedSandboxes(true);
+    }
+  }, []);
+
+  const resetSandboxSession = useCallback(
+    (options: { clearChat?: boolean } = {}) => {
+      const { clearChat = false } = options;
+
+      setSandboxId(null);
+      setVncUrl(null);
+      setSelectedTimeoutMs(SANDBOX_TIMEOUT_MS);
+      setTimeRemaining(SANDBOX_TIMEOUT_MS / 1000);
+      setExpiresAtMs(Date.now() + SANDBOX_TIMEOUT_MS);
+      lastLeaseRenewedAtRef.current = null;
+      lastDisplayResizeRef.current = null;
+      stopGeneration();
+      if (clearChat) {
+        clearMessages();
+      }
+    },
+    [clearMessages, stopGeneration]
+  );
+
+  const applySandboxSession = useCallback((session: SandboxSession) => {
+    setSandboxId(session.sandboxId);
+    setVncUrl(session.vncUrl);
+    setSelectedTimeoutMs(session.timeoutMs);
+    setTimeRemaining(session.timeRemainingSeconds);
+    setExpiresAtMs(Date.parse(session.expiresAt));
+    lastLeaseRenewedAtRef.current = Date.now();
+    lastDisplayResizeRef.current = null;
+  }, []);
+
   useEffect(() => {
     const handleVisibilityChange = () => {
       setIsTabVisible(document.visibilityState === "visible");
@@ -105,17 +185,10 @@ export default function AppShell({ userEmail }: AppShellProps) {
   const stopSandbox = async () => {
     if (sandboxId) {
       try {
-        stopGeneration();
         const success = await stopSandboxAction(sandboxId);
         if (success) {
-          setSandboxId(null);
-          setVncUrl(null);
-          clearMessages();
-          setSelectedTimeoutMs(SANDBOX_TIMEOUT_MS);
-          setTimeRemaining(SANDBOX_TIMEOUT_MS / 1000);
-          setExpiresAtMs(Date.now() + SANDBOX_TIMEOUT_MS);
-          lastLeaseRenewedAtRef.current = null;
-          lastDisplayResizeRef.current = null;
+          resetSandboxSession({ clearChat: true });
+          await refreshSandboxes();
           toast("Sandbox instance stopped");
         } else {
           toast.error("Failed to stop sandbox instance");
@@ -222,7 +295,7 @@ export default function AppShell({ userEmail }: AppShellProps) {
     }
   };
 
-  const handleSandboxCreated = (newSandboxId: string, newVncUrl: string) => {
+  const handleSandboxCreated = useCallback((newSandboxId: string, newVncUrl: string) => {
     setSandboxId(newSandboxId);
     setVncUrl(newVncUrl);
     setSelectedTimeoutMs(SANDBOX_TIMEOUT_MS);
@@ -230,8 +303,9 @@ export default function AppShell({ userEmail }: AppShellProps) {
     setExpiresAtMs(Date.now() + SANDBOX_TIMEOUT_MS);
     lastLeaseRenewedAtRef.current = Date.now();
     lastDisplayResizeRef.current = null;
+    refreshSandboxes();
     toast.success("Sandbox instance created");
-  };
+  }, [refreshSandboxes]);
 
   const startOrResumeSandbox = useCallback(async () => {
     setIsLoading(true);
@@ -242,13 +316,8 @@ export default function AppShell({ userEmail }: AppShellProps) {
       });
 
       if (result.ok) {
-        setSandboxId(result.sandboxId);
-        setVncUrl(result.vncUrl);
-        setSelectedTimeoutMs(result.timeoutMs);
-        setTimeRemaining(result.timeRemainingSeconds);
-        setExpiresAtMs(Date.parse(result.expiresAt));
-        lastLeaseRenewedAtRef.current = Date.now();
-        lastDisplayResizeRef.current = null;
+        applySandboxSession(result);
+        await refreshSandboxes();
       } else {
         toast.error(result.error);
       }
@@ -258,7 +327,153 @@ export default function AppShell({ userEmail }: AppShellProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [getSandboxResolution]);
+  }, [applySandboxSession, getSandboxResolution, refreshSandboxes]);
+
+  const resumeSandbox = useCallback(
+    async (targetSandboxId: string) => {
+      setSandboxActionId(targetSandboxId);
+      setIsLoading(true);
+
+      try {
+        const result = await resumeSandboxAction(targetSandboxId);
+
+        if (result.ok) {
+          applySandboxSession(result);
+          await refreshSandboxes();
+          setIsHistoryOpen(false);
+          toast.success("Sandbox resumed");
+        } else {
+          toast.error(result.error);
+          await refreshSandboxes();
+        }
+      } catch (error) {
+        console.error("Failed to resume sandbox:", error);
+        toast.error("Failed to resume sandbox");
+        await refreshSandboxes();
+      } finally {
+        setSandboxActionId(null);
+        setIsLoading(false);
+      }
+    },
+    [applySandboxSession, refreshSandboxes]
+  );
+
+  const resumeLatestSandbox = useCallback(async () => {
+    if (!latestResumableSandbox) {
+      toast.error("No saved sandbox found");
+      return;
+    }
+
+    setSandboxActionId(latestResumableSandbox.sandboxId);
+    setIsLoading(true);
+
+    try {
+      const result = await resumeLatestSandboxAction();
+
+      if (result.ok) {
+        applySandboxSession(result);
+        await refreshSandboxes();
+        toast.success("Sandbox resumed");
+      } else {
+        toast.error(result.error);
+        await refreshSandboxes();
+      }
+    } catch (error) {
+      console.error("Failed to resume latest sandbox:", error);
+      toast.error("Failed to resume sandbox");
+      await refreshSandboxes();
+    } finally {
+      setSandboxActionId(null);
+      setIsLoading(false);
+    }
+  }, [applySandboxSession, latestResumableSandbox, refreshSandboxes]);
+
+  const pauseSandbox = useCallback(
+    async (targetSandboxId: string) => {
+      setSandboxActionId(targetSandboxId);
+
+      try {
+        const result = await pauseSandboxAction(targetSandboxId);
+
+        if (result.ok) {
+          setSandboxes(result.sandboxes);
+          if (targetSandboxId === sandboxId) {
+            resetSandboxSession();
+          }
+          toast.success("Sandbox paused");
+        } else {
+          if (result.sandboxes) setSandboxes(result.sandboxes);
+          toast.error(result.error);
+        }
+      } catch (error) {
+        console.error("Failed to pause sandbox:", error);
+        toast.error("Failed to pause sandbox");
+        await refreshSandboxes();
+      } finally {
+        setSandboxActionId(null);
+      }
+    },
+    [refreshSandboxes, resetSandboxSession, sandboxId]
+  );
+
+  const deleteSandbox = useCallback(
+    async (targetSandboxId: string) => {
+      if (!window.confirm("Delete this sandbox? This cannot be undone.")) {
+        return;
+      }
+
+      setSandboxActionId(targetSandboxId);
+
+      try {
+        const result = await deleteSandboxAction(targetSandboxId);
+
+        if (result.ok) {
+          setSandboxes(result.sandboxes);
+          if (targetSandboxId === sandboxId) {
+            resetSandboxSession({ clearChat: true });
+          }
+          toast.success("Sandbox deleted");
+        } else {
+          if (result.sandboxes) setSandboxes(result.sandboxes);
+          toast.error(result.error);
+        }
+      } catch (error) {
+        console.error("Failed to delete sandbox:", error);
+        toast.error("Failed to delete sandbox");
+        await refreshSandboxes();
+      } finally {
+        setSandboxActionId(null);
+      }
+    },
+    [refreshSandboxes, resetSandboxSession, sandboxId]
+  );
+
+  const deleteAllSandboxes = useCallback(async () => {
+    if (!window.confirm("Delete all saved sandboxes? This cannot be undone.")) {
+      return;
+    }
+
+    setIsDeletingAllSandboxes(true);
+
+    try {
+      const result = await deleteAllSandboxesAction();
+
+      if (result.ok) {
+        setSandboxes(result.sandboxes);
+        resetSandboxSession({ clearChat: true });
+        toast.success("All sandboxes deleted");
+      } else {
+        if (result.sandboxes) setSandboxes(result.sandboxes);
+        toast.error(result.error);
+      }
+    } catch (error) {
+      console.error("Failed to delete all sandboxes:", error);
+      toast.error("Failed to delete sandboxes");
+      await refreshSandboxes();
+    } finally {
+      setIsDeletingAllSandboxes(false);
+    }
+  }, [refreshSandboxes, resetSandboxSession]);
 
   const handleClearChat = () => {
     clearMessages();
@@ -350,36 +565,47 @@ export default function AppShell({ userEmail }: AppShellProps) {
     if (!sandboxId) return;
 
     if (timeRemaining === 0) {
-      setSandboxId(null);
-      setVncUrl(null);
-      clearMessages();
-      stopGeneration();
+      resetSandboxSession({ clearChat: true });
+      refreshSandboxes();
       toast.error("Instance time expired");
-      setSelectedTimeoutMs(SANDBOX_TIMEOUT_MS);
-      setTimeRemaining(SANDBOX_TIMEOUT_MS / 1000);
-      setExpiresAtMs(Date.now() + SANDBOX_TIMEOUT_MS);
-      lastLeaseRenewedAtRef.current = null;
-      lastDisplayResizeRef.current = null;
     }
   }, [
     timeRemaining,
     sandboxId,
-    stopGeneration,
-    clearMessages,
+    resetSandboxSession,
+    refreshSandboxes,
   ]);
+
+  useEffect(() => {
+    refreshSandboxes();
+  }, [refreshSandboxes]);
 
   useEffect(() => {
     onSandboxCreated((newSandboxId: string, newVncUrl: string) => {
       handleSandboxCreated(newSandboxId, newVncUrl);
     });
-  }, [onSandboxCreated]);
+  }, [handleSandboxCreated, onSandboxCreated]);
 
   useEffect(() => {
-    if (hasAutoStartedRef.current || chatLoading || sandboxId) return;
+    if (
+      hasAutoStartedRef.current ||
+      chatLoading ||
+      sandboxId ||
+      !hasLoadedSandboxes ||
+      resumableSandboxes.length > 0
+    ) {
+      return;
+    }
 
     hasAutoStartedRef.current = true;
     startOrResumeSandbox();
-  }, [chatLoading, sandboxId, startOrResumeSandbox]);
+  }, [
+    chatLoading,
+    hasLoadedSandboxes,
+    resumableSandboxes.length,
+    sandboxId,
+    startOrResumeSandbox,
+  ]);
 
   useEffect(() => {
     const wrapper = iFrameWrapperRef.current;
@@ -410,6 +636,138 @@ export default function AppShell({ userEmail }: AppShellProps) {
       }
     };
   }, [getSandboxResolution, resizeSandboxDisplay, sandboxId, vncUrl]);
+
+  const shortSandboxId = (value: string) =>
+    value.length > 18 ? `${value.slice(0, 8)}...${value.slice(-6)}` : value;
+
+  const formatSandboxDate = (value: string | null) => {
+    if (!value) return "Never";
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(new Date(value));
+  };
+
+  const getSandboxStateVariant = (state: SandboxSummary["state"]) => {
+    if (state === "running") return "success" as const;
+    if (state === "paused") return "warning" as const;
+    return "error" as const;
+  };
+
+  const SandboxHistoryPanel = () => (
+    <AnimatePresence>
+      {isHistoryOpen && (
+        <motion.div
+          className="border-b bg-bg"
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: "auto" }}
+          exit={{ opacity: 0, height: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <div className="mx-auto flex max-h-72 w-full max-w-7xl flex-col gap-3 overflow-y-auto px-3 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="font-mono text-sm uppercase text-fg">
+                  Saved sandboxes
+                </h2>
+              </div>
+              <Button
+                onClick={deleteAllSandboxes}
+                variant="error"
+                size="sm"
+                loading={isDeletingAllSandboxes}
+                disabled={sandboxes.length === 0}
+              >
+                <Trash2 className="h-3 w-3" />
+                Delete all
+              </Button>
+            </div>
+
+            {sandboxes.length === 0 ? (
+              <div className="rounded-sm border border-border px-3 py-4 text-sm text-fg-500">
+                No saved sandboxes.
+              </div>
+            ) : (
+              <div className="divide-y divide-border overflow-hidden rounded-sm border border-border">
+                {sandboxes.map((sandbox) => {
+                  const isCurrentSandbox = sandbox.sandboxId === sandboxId;
+                  const isActionLoading =
+                    sandboxActionId === sandbox.sandboxId || isLoading;
+                  const canResume =
+                    sandbox.state === "running" || sandbox.state === "paused";
+                  const canPause =
+                    sandbox.state === "running" && !isCurrentSandbox;
+
+                  return (
+                    <div
+                      key={sandbox.sandboxId}
+                      className="grid gap-3 px-3 py-3 md:grid-cols-[minmax(0,1.2fr)_auto] md:items-center"
+                    >
+                      <div className="min-w-0 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className="truncate font-mono text-sm text-fg"
+                            title={sandbox.sandboxId}
+                          >
+                            {shortSandboxId(sandbox.sandboxId)}
+                          </span>
+                          <Badge variant={getSandboxStateVariant(sandbox.state)}>
+                            {sandbox.state}
+                          </Badge>
+                          {isCurrentSandbox && (
+                            <Badge variant="accent">active</Badge>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-500">
+                          <span>Created {formatSandboxDate(sandbox.createdAt)}</span>
+                          <span>Last used {formatSandboxDate(sandbox.lastSeenAt)}</span>
+                          <span>Expires {formatSandboxDate(sandbox.expiresAt)}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                        <Button
+                          onClick={() => resumeSandbox(sandbox.sandboxId)}
+                          variant="accent"
+                          size="sm"
+                          disabled={!canResume || isCurrentSandbox}
+                          loading={isActionLoading && !isCurrentSandbox}
+                        >
+                          <Play className="h-3 w-3" />
+                          Resume
+                        </Button>
+                        <Button
+                          onClick={() => pauseSandbox(sandbox.sandboxId)}
+                          variant="muted"
+                          size="sm"
+                          disabled={!canPause}
+                          loading={isActionLoading && canPause}
+                        >
+                          <Pause className="h-3 w-3" />
+                          Pause
+                        </Button>
+                        <Button
+                          onClick={() => deleteSandbox(sandbox.sandboxId)}
+                          variant="error"
+                          size="sm"
+                          loading={sandboxActionId === sandbox.sandboxId}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
 
   return (
     <div className="h-dvh w-screen overflow-hidden bg-bg">
@@ -450,6 +808,26 @@ export default function AppShell({ userEmail }: AppShellProps) {
           <div className="hidden lg:flex items-center gap-2">
             <AccountControls />
             <ThemeToggle />
+            <Button
+              onClick={() => setIsHistoryOpen((open) => !open)}
+              variant="muted"
+              title="Saved sandboxes"
+            >
+              <History className="h-3 w-3" />
+              Sandboxes
+            </Button>
+
+            {!sandboxId && latestResumableSandbox && (
+              <Button
+                onClick={resumeLatestSandbox}
+                variant="accent"
+                loading={isLoading}
+                title="Resume latest saved sandbox"
+              >
+                <Play className="h-3 w-3" />
+                Resume
+              </Button>
+            )}
 
             <AnimatePresence>
               {sandboxId && (
@@ -499,6 +877,16 @@ export default function AppShell({ userEmail }: AppShellProps) {
                   </Button>
 
                   <Button
+                    onClick={() => pauseSandbox(sandboxId)}
+                    variant="muted"
+                    className="text-xs"
+                    loading={sandboxActionId === sandboxId}
+                  >
+                    <Pause className="w-3 h-3" />
+                    Pause
+                  </Button>
+
+                  <Button
                     onClick={stopSandbox}
                     variant="error"
                     className="text-xs"
@@ -513,6 +901,27 @@ export default function AppShell({ userEmail }: AppShellProps) {
 
           <div className="lg:hidden flex items-center">
             <AnimatePresence>
+              {!sandboxId && latestResumableSandbox && (
+                <motion.div
+                  className="flex items-center gap-1"
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <Button
+                    onClick={resumeLatestSandbox}
+                    variant="accent"
+                    size="sm"
+                    className="px-1.5"
+                    loading={isLoading}
+                    title="Resume latest saved sandbox"
+                  >
+                    <Play className="h-3 w-3" />
+                  </Button>
+                </motion.div>
+              )}
+
               {sandboxId && (
                 <motion.div
                   className="flex items-center gap-1"
@@ -569,6 +978,17 @@ export default function AppShell({ userEmail }: AppShellProps) {
                   </Button>
 
                   <Button
+                    onClick={() => pauseSandbox(sandboxId)}
+                    variant="muted"
+                    size="sm"
+                    title="Pause sandbox"
+                    loading={sandboxActionId === sandboxId}
+                    className="px-1.5"
+                  >
+                    <Pause className="w-3 h-3" />
+                  </Button>
+
+                  <Button
                     onClick={stopSandbox}
                     variant="error"
                     size="sm"
@@ -595,9 +1015,19 @@ export default function AppShell({ userEmail }: AppShellProps) {
                 <AccountControls />
                 <ThemeToggle />
               </div>
+              <Button
+                onClick={() => setIsHistoryOpen((open) => !open)}
+                variant="muted"
+                size="sm"
+              >
+                <History className="h-3 w-3" />
+                Sandboxes
+              </Button>
             </motion.div>
           )}
         </AnimatePresence>
+
+        <SandboxHistoryPanel />
 
         <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
           <div

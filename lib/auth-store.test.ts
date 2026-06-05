@@ -8,10 +8,13 @@ import {
   initializeDatabase,
   createSession,
   createSandboxRecord,
+  deleteAllSandboxRecordsForUser,
   deleteSandboxRecordForUser,
   getLatestActiveSandboxForUser,
   getSandboxForUser,
+  listSandboxesForUser,
   touchSandboxForUser,
+  updateSandboxStateForUser,
   verifyPassword,
 } from "./auth-store";
 
@@ -134,6 +137,108 @@ test("sandbox records can update timer state and be deleted for a user", async (
     true
   );
   assert.equal(await getSandboxForUser(db, userA.id, "sandbox-to-update"), null);
+});
+
+test("sandbox records persist lifecycle state for their owning user", async (t) => {
+  const db = createTestPool();
+  t.after(() => db.end());
+  await initializeDatabase(db);
+
+  const user = await createUser(db, "state@example.com", "password");
+
+  const created = await createSandboxRecord(db, {
+    userId: user.id,
+    sandboxId: "stateful-sandbox",
+    vncUrl: "https://stateful.example.test",
+  });
+
+  assert.equal(created.state, "running");
+  assert.equal(created.pausedAt, null);
+
+  assert.equal(
+    await updateSandboxStateForUser(db, user.id, "stateful-sandbox", "paused"),
+    true
+  );
+
+  const paused = await getSandboxForUser(db, user.id, "stateful-sandbox");
+  assert.equal(paused?.state, "paused");
+  assert.ok(paused?.pausedAt instanceof Date);
+
+  assert.equal(
+    await updateSandboxStateForUser(db, user.id, "stateful-sandbox", "running"),
+    true
+  );
+
+  const running = await getSandboxForUser(db, user.id, "stateful-sandbox");
+  assert.equal(running?.state, "running");
+  assert.equal(running?.pausedAt, null);
+});
+
+test("sandbox history is listed newest first and scoped to a user", async (t) => {
+  const db = createTestPool();
+  t.after(() => db.end());
+  await initializeDatabase(db);
+
+  const userA = await createUser(db, "history-a@example.com", "password");
+  const userB = await createUser(db, "history-b@example.com", "password");
+
+  await createSandboxRecord(db, {
+    userId: userA.id,
+    sandboxId: "older-sandbox",
+    vncUrl: "https://older.example.test",
+  });
+  await createSandboxRecord(db, {
+    userId: userA.id,
+    sandboxId: "newer-sandbox",
+    vncUrl: "https://newer.example.test",
+  });
+  await createSandboxRecord(db, {
+    userId: userB.id,
+    sandboxId: "other-user-sandbox",
+    vncUrl: "https://other.example.test",
+  });
+  await touchSandboxForUser(db, userA.id, "older-sandbox");
+
+  const sandboxes = await listSandboxesForUser(db, userA.id);
+
+  assert.deepEqual(
+    sandboxes.map((sandbox) => sandbox.sandboxId),
+    ["older-sandbox", "newer-sandbox"]
+  );
+});
+
+test("delete all sandbox records only removes records for the requested user", async (t) => {
+  const db = createTestPool();
+  t.after(() => db.end());
+  await initializeDatabase(db);
+
+  const userA = await createUser(db, "delete-all-a@example.com", "password");
+  const userB = await createUser(db, "delete-all-b@example.com", "password");
+
+  await createSandboxRecord(db, {
+    userId: userA.id,
+    sandboxId: "delete-a-1",
+    vncUrl: "https://delete-a-1.example.test",
+  });
+  await createSandboxRecord(db, {
+    userId: userA.id,
+    sandboxId: "delete-a-2",
+    vncUrl: "https://delete-a-2.example.test",
+  });
+  await createSandboxRecord(db, {
+    userId: userB.id,
+    sandboxId: "keep-b-1",
+    vncUrl: "https://keep-b-1.example.test",
+  });
+
+  const deletedCount = await deleteAllSandboxRecordsForUser(db, userA.id);
+
+  assert.equal(deletedCount, 2);
+  assert.deepEqual(await listSandboxesForUser(db, userA.id), []);
+  assert.equal(
+    (await getSandboxForUser(db, userB.id, "keep-b-1"))?.sandboxId,
+    "keep-b-1"
+  );
 });
 
 test("sessions map opaque tokens back to users", async (t) => {

@@ -21,12 +21,21 @@ import {
 } from "@/lib/sandbox-stream";
 import {
   createSandboxRecord,
+  deleteAllSandboxRecordsForUser,
   deleteSandboxRecordForUser,
   getLatestActiveSandboxForUser,
+  getLatestResumableSandboxForUser,
   getSandboxForUser,
+  listSandboxesForUser,
   touchSandboxForUser,
+  updateSandboxStateForUser,
   type SandboxRecord,
 } from "@/lib/auth-store";
+import {
+  E2BSandboxLifecycleError,
+  pauseSandboxProvider,
+  resumeSandboxProvider,
+} from "@/lib/sandbox-lifecycle";
 
 type SandboxSessionResult =
   | {
@@ -42,6 +51,26 @@ type SandboxSessionResult =
 type ResizeSandboxDisplayResult =
   | { ok: true; resolution: [number, number] }
   | { ok: false; error: string; resolution: [number, number] };
+
+export type SandboxSummary = {
+  sandboxId: string;
+  vncUrl: string;
+  timeoutMs: number;
+  expiresAt: string;
+  timeRemainingSeconds: number;
+  state: SandboxRecord["state"];
+  pausedAt: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+};
+
+type ListSandboxesResult =
+  | { ok: true; sandboxes: SandboxSummary[] }
+  | { ok: false; error: string };
+
+type SandboxMutationResult =
+  | { ok: true; sandboxes: SandboxSummary[] }
+  | { ok: false; error: string; sandboxes?: SandboxSummary[] };
 
 function getExpiresAt(timeoutMs: number): Date {
   return new Date(Date.now() + timeoutMs);
@@ -80,6 +109,64 @@ function toSandboxSession(record: SandboxRecord): Extract<SandboxSessionResult, 
     expiresAt: record.expiresAt.toISOString(),
     timeRemainingSeconds: getRemainingSeconds(record.expiresAt),
   };
+}
+
+function toSandboxSummary(record: SandboxRecord): SandboxSummary {
+  return {
+    sandboxId: record.sandboxId,
+    vncUrl: record.vncUrl,
+    timeoutMs: record.timeoutMs,
+    expiresAt: record.expiresAt.toISOString(),
+    timeRemainingSeconds: getRemainingSeconds(record.expiresAt),
+    state: record.state,
+    pausedAt: record.pausedAt?.toISOString() ?? null,
+    createdAt: record.createdAt.toISOString(),
+    lastSeenAt: record.lastSeenAt.toISOString(),
+  };
+}
+
+async function getSandboxSummariesForUser(
+  db: Awaited<ReturnType<typeof getInitializedDatabase>>,
+  userId: string
+): Promise<SandboxSummary[]> {
+  const sandboxes = await listSandboxesForUser(db, userId);
+  return sandboxes.map(toSandboxSummary);
+}
+
+function isUnavailableSandboxError(error: unknown): boolean {
+  return (
+    error instanceof E2BSandboxLifecycleError &&
+    (error.status === 404 || error.status === 409)
+  );
+}
+
+async function connectSandboxSession(
+  record: SandboxRecord,
+  options: { resumePaused: boolean }
+): Promise<SandboxRecord> {
+  if (record.state === "unavailable") {
+    throw new Error("Sandbox is unavailable");
+  }
+
+  if (record.state === "paused" && options.resumePaused) {
+    await resumeSandboxProvider(
+      record.sandboxId,
+      getSandboxProviderTimeoutMs(record.timeoutMs)
+    );
+  }
+
+  const desktop = await Sandbox.connect(record.sandboxId);
+  await desktop.setTimeout(getSandboxProviderTimeoutMs(record.timeoutMs));
+  const vncUrl = await getStreamUrl(desktop, record.vncUrl);
+
+  return createSandboxRecord(await getInitializedDatabase(), {
+    userId: record.userId,
+    sandboxId: record.sandboxId,
+    vncUrl,
+    timeoutMs: record.timeoutMs,
+    expiresAt: getExpiresAt(record.timeoutMs),
+    state: "running",
+  });
 }
 
 export async function ensureSandboxAction(input?: {
@@ -140,6 +227,141 @@ export async function ensureSandboxAction(input?: {
     console.error("Failed to start sandbox:", error);
     return { ok: false, error: "Failed to start sandbox" };
   }
+}
+
+export async function listSandboxesAction(): Promise<ListSandboxesResult> {
+  const user = await requireCurrentUser();
+  const db = await getInitializedDatabase();
+
+  try {
+    return {
+      ok: true,
+      sandboxes: await getSandboxSummariesForUser(db, user.id),
+    };
+  } catch (error) {
+    console.error("Failed to list sandboxes:", error);
+    return { ok: false, error: "Failed to list sandboxes" };
+  }
+}
+
+export async function resumeLatestSandboxAction(): Promise<SandboxSessionResult> {
+  const user = await requireCurrentUser();
+  const db = await getInitializedDatabase();
+  const record = await getLatestResumableSandboxForUser(db, user.id);
+
+  if (!record) {
+    return { ok: false, error: "No saved sandbox found" };
+  }
+
+  return resumeSandboxAction(record.sandboxId);
+}
+
+export async function resumeSandboxAction(
+  sandboxId: string
+): Promise<SandboxSessionResult> {
+  const user = await requireCurrentUser();
+  const db = await getInitializedDatabase();
+  const record = await getSandboxForUser(db, user.id, sandboxId);
+
+  if (!record) {
+    return { ok: false, error: "Sandbox not found" };
+  }
+
+  if (record.state === "unavailable") {
+    return { ok: false, error: "Sandbox is unavailable" };
+  }
+
+  try {
+    const updated = await connectSandboxSession(record, { resumePaused: true });
+    return toSandboxSession(updated);
+  } catch (error) {
+    console.error("Failed to resume sandbox:", error);
+    if (isUnavailableSandboxError(error)) {
+      await updateSandboxStateForUser(db, user.id, sandboxId, "unavailable");
+    }
+    return { ok: false, error: "Failed to resume sandbox" };
+  }
+}
+
+export async function pauseSandboxAction(
+  sandboxId: string
+): Promise<SandboxMutationResult> {
+  const user = await requireCurrentUser();
+  const db = await getInitializedDatabase();
+
+  if (!(await getSandboxForUser(db, user.id, sandboxId))) {
+    return { ok: false, error: "Sandbox not found" };
+  }
+
+  try {
+    await pauseSandboxProvider(sandboxId);
+    await updateSandboxStateForUser(db, user.id, sandboxId, "paused");
+    return {
+      ok: true,
+      sandboxes: await getSandboxSummariesForUser(db, user.id),
+    };
+  } catch (error) {
+    console.error("Failed to pause sandbox:", error);
+    if (isUnavailableSandboxError(error)) {
+      await updateSandboxStateForUser(db, user.id, sandboxId, "unavailable");
+    }
+    return {
+      ok: false,
+      error: "Failed to pause sandbox",
+      sandboxes: await getSandboxSummariesForUser(db, user.id),
+    };
+  }
+}
+
+export async function deleteSandboxAction(
+  sandboxId: string
+): Promise<SandboxMutationResult> {
+  const user = await requireCurrentUser();
+  const db = await getInitializedDatabase();
+
+  if (!(await getSandboxForUser(db, user.id, sandboxId))) {
+    return {
+      ok: false,
+      error: "Sandbox not found",
+      sandboxes: await getSandboxSummariesForUser(db, user.id),
+    };
+  }
+
+  try {
+    await Sandbox.kill(sandboxId);
+  } catch (error) {
+    console.error("Failed to kill sandbox during delete:", error);
+  }
+
+  await deleteSandboxRecordForUser(db, user.id, sandboxId);
+
+  return {
+    ok: true,
+    sandboxes: await getSandboxSummariesForUser(db, user.id),
+  };
+}
+
+export async function deleteAllSandboxesAction(): Promise<SandboxMutationResult> {
+  const user = await requireCurrentUser();
+  const db = await getInitializedDatabase();
+  const sandboxes = await listSandboxesForUser(db, user.id);
+
+  await Promise.all(
+    sandboxes.map(async (sandbox) => {
+      try {
+        await Sandbox.kill(sandbox.sandboxId);
+      } catch (error) {
+        console.error("Failed to kill sandbox during delete all:", error);
+      }
+    })
+  );
+
+  await deleteAllSandboxRecordsForUser(db, user.id);
+
+  return {
+    ok: true,
+    sandboxes: [],
+  };
 }
 
 export async function increaseTimeout(sandboxId: string, timeoutMs?: number) {
@@ -224,8 +446,7 @@ export async function stopSandboxAction(sandboxId: string) {
   }
 
   try {
-    const desktop = await Sandbox.connect(sandboxId);
-    await desktop.kill();
+    await Sandbox.kill(sandboxId);
     await deleteSandboxRecordForUser(db, user.id, sandboxId);
     return true;
   } catch (error) {

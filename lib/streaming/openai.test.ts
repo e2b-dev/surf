@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { buildScreenshotChatInput } from "./openai";
+import { buildScreenshotChatInput, INSTRUCTIONS } from "./openai";
 
 test("screenshot chat input includes the latest user prompt and current UI screenshot", () => {
   const input = buildScreenshotChatInput(
@@ -31,4 +31,11 @@ test("screenshot chat input includes the latest user prompt and current UI scree
       ],
     },
   ]);
+});
+
+test("screenshot chat instructions include missing reports dropdown reply", () => {
+  assert.match(
+    INSTRUCTIONS,
+    /If there is no reports section in the dropdown, reply exactly: "We are missing permisions for this client, they need to enable the reports and analytics section"/,
+  );
 });

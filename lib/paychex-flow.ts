@@ -14,5 +14,7 @@ Navigate Paychex Flex using this path:
 2. Choose Analytics and Reports.
 3. Open All Reports.
 
+If there is no reports section in the dropdown, reply exactly: "We are missing permisions for this client, they need to enable the reports and analytics section".
+
 Determine whether this company has access to reports. Some companies did not grant access to reports. If reports access is missing, blocked, unavailable, or permission denied, stop the flow and clearly report that the selected company is missing reports access. If All Reports is available, report that Paychex reports access is available and wait for the next migration instruction.
 `.trim();
