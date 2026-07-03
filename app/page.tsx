@@ -212,7 +212,7 @@ export default function Home() {
               className="flex items-center gap-1 sm:gap-2"
               target="_blank"
             >
-              <Logo width={20} height={20} className="sm:w-6 sm:h-6" />
+              <Logo height={20} width={45} className="sm:h-6 sm:w-[54px]" />
               <h1 className="whitespace-pre">Surf - Computer Agent by </h1>
             </Link>
             <Link
