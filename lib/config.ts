@@ -1,5 +1,10 @@
 export const SANDBOX_TIMEOUT_MS = 300_000; // 5 minutes in milliseconds
 
+// Sandbox template used for all fresh desktops. This is our fork of E2B's
+// public `desktop` template — identical except for the branded wallpaper.
+// Built from sandbox-template/ (see sandbox-template/build.ts).
+export const SANDBOX_TEMPLATE = "surf-desktop";
+
 // Resolution boundaries used by the sandbox and optional screenshot scaling.
 // The current OpenAI computer-use path sends original-detail screenshots and
 // does not actively scale them before upload.

@@ -22,6 +22,7 @@ import { useAgentRun, AgentStatus } from "@/lib/fork/use-agent-run";
 import {
   FORK_COUNT,
   FORK_RESOLUTION,
+  FORK_AUTH_PROMPT_ID,
   DEMO_SITE,
   ForkDemoConfig,
 } from "@/lib/fork/config";
@@ -93,8 +94,10 @@ export default function ForkDemoPage() {
   const startDemo = async () => {
     if (!demoConfig) return;
     setStage("authenticating");
+    // Trigger the server-built auth prompt by id — the password is assembled
+    // and consumed server-side and never touches the browser.
     const sandboxId = await primary.run({
-      task: demoConfig.authTask,
+      promptId: FORK_AUTH_PROMPT_ID,
       resolution: FORK_RESOLUTION,
     });
     if (sandboxId) {

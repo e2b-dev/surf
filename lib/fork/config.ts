@@ -9,11 +9,19 @@
  *
  * We target Hacker News (news.ycombinator.com), a genuinely auth-gated site.
  * Credentials live in .env.local (DEMO_SITE_USERNAME / DEMO_SITE_PASSWORD) and
- * are only ever read on the server, so the password is never baked into the
- * client bundle.
+ * are only ever read on the server. The password is never returned to the
+ * client: the browser triggers the login run by the opaque id below, and the
+ * server builds + consumes the auth prompt itself (see app/api/chat/route.ts).
  */
 
 export const FORK_COUNT = 3;
+
+/**
+ * Opaque identifier the client sends to /api/chat to run the authentication
+ * step. The route resolves it to a server-built prompt containing the password,
+ * so the credential never crosses the server→client trust boundary.
+ */
+export const FORK_AUTH_PROMPT_ID = "fork-auth";
 
 /** Resolution used for the primary sandbox and every fork. */
 export const FORK_RESOLUTION: [number, number] = [1024, 768];
@@ -37,13 +45,13 @@ export interface ForkTask {
 export interface ForkDemoConfig {
   siteLabel: string;
   username: string;
-  authTask: string;
   forkTasks: ForkTask[];
 }
 
 /**
- * Task the primary agent runs to establish an authenticated session.
- * Built on the server so the password never reaches the client bundle.
+ * Task the primary agent runs to establish an authenticated session. This
+ * embeds the plaintext password, so it MUST only ever be built and consumed on
+ * the server (it is never included in ForkDemoConfig / any client payload).
  */
 export function buildAuthTask(username: string, password: string): string {
   return `Open Firefox if it isn't already open. Go to ${DEMO_SITE.loginUrl}.

@@ -2,7 +2,6 @@
 
 import { SANDBOX_TIMEOUT_MS } from "@/lib/config";
 import {
-  buildAuthTask,
   buildForkTasks,
   DEMO_SITE,
   ForkDemoConfig,
@@ -38,8 +37,12 @@ export async function stopSandboxAction(sandboxId: string) {
 }
 
 /**
- * Returns the fork-demo tasks, built on the server from the credentials in
- * .env.local. Keeps the password out of the client bundle.
+ * Returns the *non-secret* fork-demo config for the client: the site label, the
+ * demo username, and the per-fork exploration tasks (which carry no password).
+ *
+ * The authentication prompt is intentionally NOT returned here — it embeds the
+ * password and is built server-side in /api/chat, triggered by FORK_AUTH_PROMPT_ID.
+ * We still validate the credentials exist so the intro can show a ready state.
  */
 export async function getForkDemoConfig(): Promise<ForkDemoConfig> {
   const username = process.env.DEMO_SITE_USERNAME;
@@ -54,7 +57,6 @@ export async function getForkDemoConfig(): Promise<ForkDemoConfig> {
   return {
     siteLabel: DEMO_SITE.label,
     username,
-    authTask: buildAuthTask(username, password),
     forkTasks: buildForkTasks(username),
   };
 }

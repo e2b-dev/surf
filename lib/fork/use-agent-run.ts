@@ -16,7 +16,14 @@ export interface AgentLogEntry {
 }
 
 export interface RunAgentOptions {
-  task: string;
+  /** Plaintext task for the agent. Provide this OR `promptId`, not both. */
+  task?: string;
+  /**
+   * Id of a server-built prompt (see FORK_AUTH_PROMPT_ID). Use this when the
+   * prompt contains secrets so they are assembled server-side and never sent
+   * from the browser.
+   */
+  promptId?: string;
   /** Existing sandbox to run against. Omit to have the backend create one. */
   sandboxId?: string;
   resolution: [number, number];
@@ -108,7 +115,12 @@ export function useAgentRun(): AgentRun {
   }, []);
 
   const run = useCallback(
-    async ({ task, sandboxId: existingSandboxId, resolution }: RunAgentOptions) => {
+    async ({
+      task,
+      promptId,
+      sandboxId: existingSandboxId,
+      resolution,
+    }: RunAgentOptions) => {
       const controller = new AbortController();
       abortRef.current = controller;
 
@@ -124,7 +136,11 @@ export function useAgentRun(): AgentRun {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            messages: [{ role: "user", content: task }],
+            // Either hand the server an opaque prompt id (it builds the prompt
+            // from secrets server-side) or the plaintext task — never both.
+            ...(promptId
+              ? { promptId }
+              : { messages: [{ role: "user", content: task }] }),
             sandboxId: existingSandboxId,
             environment: "linux",
             resolution,
