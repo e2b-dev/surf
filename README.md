@@ -108,6 +108,72 @@ Navigate to [http://localhost:3000](http://localhost:3000) in your browser.
 - **Chat Interface**: Provides a conversational interface for interacting with the AI
 - **Example Prompts**: Offers pre-defined instructions to help users get started
 - **Dark/Light Mode**: Supports both dark and light themes
+- **Fork an authenticated agent** (`/fork`): Demonstrates E2B snapshots for parallel agents — see below
+
+## Forking an authenticated agent (E2B Snapshots demo)
+
+The `/fork` route (linked as **"Fork demo"** in the header) showcases why E2B
+snapshots are a compelling primitive for parallel agents that need to **share
+work and state**.
+
+The flow has three stages:
+
+1. **Authenticate once** — A single agent completes a real browser login flow on
+   [Hacker News](https://news.ycombinator.com/login) using an account whose
+   credentials live in `.env.local`.
+2. **Snapshot** — The agent's sandbox is snapshotted with
+   [`sandbox.createSnapshot()`](https://e2b.dev/docs). A snapshot captures the
+   sandbox's **full state — memory *and* filesystem — including the running
+   browser and its live authenticated session**.
+3. **Fork & explore in parallel** — The snapshot is forked into
+   `FORK_COUNT` (default **3**) independent sandboxes via
+   `Sandbox.create(snapshotId)`. Every fork resumes **already logged in** and
+   immediately continues exploring different parts of the site — no fork ever
+   authenticates again.
+
+### Setup
+
+Add a Hacker News account's credentials to `.env.local` (any HN account works —
+signup at https://news.ycombinator.com/login takes seconds and needs no email):
+
+```env
+DEMO_SITE_USERNAME=your_hn_username
+DEMO_SITE_PASSWORD=your_hn_password
+```
+
+These are read **only on the server** (via the `getForkDemoConfig` action), so
+the password is never bundled into the client. To target a different site,
+edit `lib/fork/config.ts` (`DEMO_SITE`, `buildAuthTask`, `buildForkTasks`).
+
+This makes the value proposition concrete: the slow, sensitive, rate-limited
+step (auth) is done **once**, then cheaply and securely shared across many
+isolated agents running concurrently. Each fork is a fully isolated micro-VM, so
+parallel work never leaks between agents.
+
+Key files:
+
+- `lib/fork/config.ts` — demo constants: target site, public credentials, the
+  auth task, and the per-fork exploration tasks (`FORK_COUNT`, `FORK_TASKS`).
+- `app/actions.ts` → `snapshotAndForkAction()` — snapshots the source sandbox
+  and forks it into N streaming desktop sandboxes.
+- `lib/fork/use-agent-run.ts` — client hook that drives one agent against
+  `/api/chat` and exposes a compact live activity log.
+- `components/fork/agent-pane.tsx` / `fork-runner.tsx` — the per-agent VNC +
+  activity-log panes.
+- `app/fork/page.tsx` — the orchestrator page (authenticate → snapshot → fork).
+
+> **Note:** Snapshots/forking require `e2b >= 2.x` and `@e2b/desktop >= 2.x`
+> (already pinned in `package.json`).
+
+Two standalone scripts under `scripts/` verify the mechanic without the UI
+(they read keys from your shell env — `export E2B_API_KEY=… OPENAI_API_KEY=…
+DEMO_SITE_USERNAME=… DEMO_SITE_PASSWORD=…`):
+
+- `npx tsx scripts/smoke-fork.mts` — fast, no OpenAI: snapshots a sandbox, forks
+  it ×3, and confirms the forks share filesystem + memory (screenshots to `/tmp`).
+- `npx tsx scripts/e2e-fork.mts` — full flow with the real agent: logs into
+  Hacker News, snapshots, forks ×3, and each fork continues exploring while
+  authenticated (screenshots to `/tmp`).
 
 ## Technical Details
 
@@ -132,6 +198,8 @@ See `package.json` for a complete list of dependencies.
 - **createSandbox**: Creates a new sandbox instance
 - **increaseTimeout**: Extends the sandbox timeout
 - **stopSandboxAction**: Stops a running sandbox instance
+- **snapshotAndForkAction**: Snapshots an authenticated sandbox and forks it into N independent, streaming sandboxes (used by the `/fork` demo)
+- **stopSandboxesAction**: Stops a set of sandboxes at once (tears down all forks)
 
 ## Troubleshooting
 

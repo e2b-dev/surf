@@ -199,7 +199,10 @@ export class OpenAIComputerStreamer
   constructor(desktop: Sandbox, resolution: [number, number]) {
     this.desktop = desktop;
     this.resolution = resolution;
-    this.openai = new OpenAI();
+    // Use the runtime's native fetch. The openai SDK's bundled node-fetch
+    // breaks on gzipped responses under newer Node runtimes (throws
+    // ERR_STREAM_PREMATURE_CLOSE); native fetch is stable.
+    this.openai = new OpenAI({ fetch: globalThis.fetch });
     this.instructions = INSTRUCTIONS;
   }
 
