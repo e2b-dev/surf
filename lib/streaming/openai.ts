@@ -195,12 +195,40 @@ export class OpenAIComputerStreamer
   public resolution: [number, number];
 
   private openai: OpenAI;
+  /** Secrets (e.g. a demo password) to scrub from any client-facing output. */
+  private redactSecrets: string[];
 
-  constructor(desktop: Sandbox, resolution: [number, number]) {
+  constructor(
+    desktop: Sandbox,
+    resolution: [number, number],
+    options: { redactSecrets?: string[] } = {}
+  ) {
     this.desktop = desktop;
     this.resolution = resolution;
-    this.openai = new OpenAI();
+    this.redactSecrets = (options.redactSecrets ?? []).filter(Boolean);
+    // Use the runtime's native fetch. The openai SDK's bundled node-fetch
+    // breaks on gzipped responses under newer Node runtimes (throws
+    // ERR_STREAM_PREMATURE_CLOSE); native fetch is stable.
+    this.openai = new OpenAI({ fetch: globalThis.fetch });
     this.instructions = INSTRUCTIONS;
+  }
+
+  /**
+   * Returns a copy of the action safe to send to the browser: any registered
+   * secret typed by the agent is masked. The original action (with the real
+   * text) is still what gets executed against the sandbox.
+   */
+  private redactActionForClient(
+    action: OpenAIComputerAction
+  ): OpenAIComputerAction {
+    if (action.type !== "type" || this.redactSecrets.length === 0) {
+      return action;
+    }
+    let text = action.text;
+    for (const secret of this.redactSecrets) {
+      if (text.includes(secret)) text = text.split(secret).join("••••••");
+    }
+    return { ...action, text };
   }
 
   private normalizeComputerCall(
@@ -469,7 +497,7 @@ export class OpenAIComputerStreamer
             trailing_wait_count: trailingWaitCount,
             actions: computerCall.actions.map((action, actionIndex) => ({
               action_index: actionIndex,
-              ...summarizeAction(action),
+              ...summarizeAction(this.redactActionForClient(action)),
             })),
           });
 
@@ -480,7 +508,7 @@ export class OpenAIComputerStreamer
 
             yield {
               type: SSEEventType.ACTION,
-              action,
+              action: this.redactActionForClient(action),
             };
 
             logDebug("OPENAI_ACTION_EXECUTION_START", {
@@ -488,7 +516,7 @@ export class OpenAIComputerStreamer
               turnIndex,
               call_id: callId,
               action_index: actionIndex,
-              action: summarizeAction(action),
+              action: summarizeAction(this.redactActionForClient(action)),
               implementation_behavior:
                 action.type === "wait"
                   ? actionIndex >= firstTrailingWaitIndex

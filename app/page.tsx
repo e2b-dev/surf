@@ -9,6 +9,7 @@ import {
   Menu,
   X,
   ArrowUpRight,
+  GitFork,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
@@ -19,7 +20,7 @@ import { ChatInput } from "@/components/chat/input";
 import { ExamplePrompts } from "@/components/chat/example-prompts";
 import { useChat } from "@/lib/chat-context";
 import Frame from "@/components/frame";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Loader, AssemblyLoader } from "@/components/loader";
 import Link from "next/link";
 import Logo from "@/components/logo";
@@ -212,7 +213,7 @@ export default function Home() {
               className="flex items-center gap-1 sm:gap-2"
               target="_blank"
             >
-              <Logo height={20} width={45} className="sm:h-6 sm:w-[54px]" />
+              <Logo className="h-4 w-auto sm:h-[18px]" />
               <h1 className="whitespace-pre">Surf - Computer Agent by </h1>
             </Link>
             <Link
@@ -241,6 +242,14 @@ export default function Home() {
 
           <div className="hidden lg:flex items-center gap-2">
             <ThemeToggle />
+            <Link
+              href="/fork"
+              className={buttonVariants({ variant: "accent" })}
+              title="Fork an authenticated agent with E2B snapshots"
+            >
+              <GitFork className="h-4 w-4" />
+              Fork demo
+            </Link>
             <RepoBanner />
 
             <AnimatePresence>
@@ -347,6 +356,14 @@ export default function Home() {
             >
               <div className="flex items-center gap-2">
                 <ThemeToggle />
+                <Link
+                  href="/fork"
+                  className={buttonVariants({ variant: "accent" })}
+                  title="Fork an authenticated agent with E2B snapshots"
+                >
+                  <GitFork className="h-4 w-4" />
+                  Fork demo
+                </Link>
                 <RepoBanner />
               </div>
             </motion.div>
