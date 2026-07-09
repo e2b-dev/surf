@@ -5,7 +5,7 @@
 
 A Next.js application that allows AI to interact with a virtual desktop environment. This project integrates [E2B's desktop sandbox](https://github.com/e2b-dev/desktop) with OpenAI's API to create an AI agent that can perform tasks on a virtual computer through natural language instructions.
 
-[E2B](https://e2b.dev) is an open source isolated virtual computer in the cloud made for AI use cases.
+[E2B](https://e2b.dev/?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=surf) is an open source isolated virtual computer in the cloud made for AI use cases.
 
 ## Overview
 
@@ -45,7 +45,7 @@ Before starting, you'll need:
 
 1. [Node.js](https://nodejs.org/) (version specified in package.json)
 2. [npm](https://www.npmjs.com/) (comes with Node.js)
-3. An [E2B API key](https://e2b.dev/docs/getting-started/api-key)
+3. An [E2B API key](https://e2b.dev/docs/getting-started/api-key?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=surf)
 4. An [OpenAI API key](https://platform.openai.com/api-keys)
 
 ## Setup Instructions
@@ -150,6 +150,6 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 ## Support
 
 If you encounter any issues or have questions:
-- Check the [E2B Documentation](https://e2b.dev/docs)
+- Check the [E2B Documentation](https://e2b.dev/docs?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=surf)
 - Join the [E2B Discord](https://discord.gg/U7KEcGErtQ)
 - Open an [issue](https://github.com/e2b-dev/computer-use-app/issues)
