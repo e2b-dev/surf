@@ -6,6 +6,7 @@ import { Providers } from "../components/providers";
 import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import { ChatProvider } from "@/lib/chat-context";
 import { Analytics } from "@vercel/analytics/react";
+import { GoogleTagManager } from "@next/third-parties/google";
 
 const ibmPlexSans = IBM_Plex_Sans({
   subsets: ["latin"],
@@ -42,6 +43,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      {process.env.NEXT_PUBLIC_GTM_ID && (
+        <GoogleTagManager gtmId={process.env.NEXT_PUBLIC_GTM_ID} />
+      )}
       <body
         className={`${ibmPlexSans.variable} ${ibmPlexMono.variable}`}
         suppressHydrationWarning
