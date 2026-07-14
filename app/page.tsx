@@ -25,6 +25,7 @@ import Link from "next/link";
 import Logo from "@/components/logo";
 import { RepoBanner } from "@/components/repo-banner";
 import { SANDBOX_TIMEOUT_MS } from "@/lib/config";
+import { getSandboxResolution } from "@/lib/resolution";
 import { Surfing } from "@/components/surfing";
 
 export default function Home() {
@@ -100,40 +101,32 @@ export default function Home() {
     }
   };
 
+  const resolveSandboxResolution = (): [number, number] => {
+    const wrapper = iFrameWrapperRef.current;
+
+    return getSandboxResolution(
+      wrapper ? [wrapper.clientWidth, wrapper.clientHeight] : undefined
+    );
+  };
+
   const onSubmit = (e: React.FormEvent) => {
     const content = handleSubmit(e);
     if (content) {
-      const width =
-        iFrameWrapperRef.current?.clientWidth ||
-        (window.innerWidth < 768 ? window.innerWidth - 32 : 1024);
-      const height =
-        iFrameWrapperRef.current?.clientHeight ||
-        (window.innerWidth < 768
-          ? Math.min(window.innerHeight * 0.4, 400)
-          : 768);
-
       sendMessage({
         content,
         sandboxId: sandboxId || undefined,
         environment: "linux",
-        resolution: [width, height],
+        resolution: resolveSandboxResolution(),
       });
     }
   };
 
   const handleExampleClick = (prompt: string) => {
-    const width =
-      iFrameWrapperRef.current?.clientWidth ||
-      (window.innerWidth < 768 ? window.innerWidth - 32 : 1024);
-    const height =
-      iFrameWrapperRef.current?.clientHeight ||
-      (window.innerWidth < 768 ? Math.min(window.innerHeight * 0.4, 400) : 768);
-
     sendMessage({
       content: prompt,
       sandboxId: sandboxId || undefined,
       environment: "linux",
-      resolution: [width, height],
+      resolution: resolveSandboxResolution(),
     });
   };
 
