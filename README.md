@@ -153,3 +153,65 @@ If you encounter any issues or have questions:
 - Check the [E2B Documentation](https://e2b.dev/docs?utm_source=github&utm_medium=referral&utm_campaign=readme&utm_content=surf)
 - Join the [E2B Discord](https://discord.gg/U7KEcGErtQ)
 - Open an [issue](https://github.com/e2b-dev/computer-use-app/issues)
+
+---
+
+## FAQ (Frequently Asked Questions)
+
+### What is Surf?
+Surf is a **Next.js application** that integrates [E2B's desktop sandbox](https://github.com/e2b-dev/desktop) with OpenAI's API to create an AI agent that can perform tasks on a virtual computer through natural language instructions.
+
+### How does Surf work?
+
+| Component | Function |
+|-----------|----------|
+| **Frontend UI (Next.js)** | Web interface with virtual desktop view and chat |
+| **E2B Desktop Sandbox** | Creates and manages virtual desktop environments |
+| **OpenAI Computer Use** | Processes instructions and generates AI actions |
+| **Streaming API (SSE)** | Real-time communication between frontend and backend |
+
+### What are the key features?
+
+| Feature | Description |
+|---------|-------------|
+| **Virtual Desktop Environment** | Runs a Linux-based desktop in a sandbox |
+| **AI-Powered Interaction** | OpenAI API for natural language instructions |
+| **Real-Time Streaming** | Live AI actions and responses via SSE |
+| **Chat Interface** | Conversational interaction with AI |
+| **Example Prompts** | Pre-defined instructions for quick start |
+| **Dark/Light Mode** | Theme customization support |
+
+### What are the prerequisites?
+
+| Requirement | Description |
+|-------------|-------------|
+| **Node.js** | Version specified in package.json |
+| **npm** | Comes with Node.js installation |
+| **E2B API Key** | Get from [E2B Docs](https://e2b.dev/docs/getting-started/api-key) |
+| **OpenAI API Key** | Get from [OpenAI Platform](https://platform.openai.com/api-keys) |
+
+### How to set up?
+
+1. **Clone**: `git clone https://github.com/e2b-dev/surf && cd surf`
+2. **Install**: `npm install`
+3. **Configure**: Create `.env.local` with:
+   ```env
+   E2B_API_KEY=your_e2b_api_key
+   OPENAI_API_KEY=your_openai_api_key
+   ```
+4. **Start**: `npm run dev`
+5. **Open**: Navigate to [http://localhost:3000](http://localhost:3000)
+
+### Is Surf free and open source?
+Yes! Surf is **Apache 2.0 licensed**. Use it freely for personal and commercial projects. [E2B](https://e2b.dev) is open source as well.
+
+### Where can I get help?
+
+| Resource | Link |
+|----------|------|
+| **Repository** | [github.com/e2b-dev/surf](https://github.com/e2b-dev/surf) |
+| **E2B Docs** | [e2b.dev/docs](https://e2b.dev/docs) |
+| **E2B Discord** | [discord.gg/U7KEcGErtQ](https://discord.gg/U7KEcGErtQ) |
+| **OpenAI Docs** | [platform.openai.com/docs](https://platform.openai.com/docs) |
+| **Issues** | [GitHub Issues](https://github.com/e2b-dev/surf/issues) |
+
