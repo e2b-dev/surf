@@ -12,7 +12,7 @@ import {
 } from "@/lib/streaming";
 import { ActionResponse } from "@/types/api";
 import { logDebug, logError, logWarning } from "../logger";
-import { OPENAI_MODEL } from "../config";
+import { getAIModel, getOpenAIClientOptions } from "../config";
 import {
   NormalizedOpenAIComputerCall,
   OpenAIComputerAction,
@@ -196,10 +196,14 @@ export class OpenAIComputerStreamer
 
   private openai: OpenAI;
 
-  constructor(desktop: Sandbox, resolution: [number, number]) {
+  constructor(
+    desktop: Sandbox,
+    resolution: [number, number],
+    openaiClient?: OpenAI
+  ) {
     this.desktop = desktop;
     this.resolution = resolution;
-    this.openai = new OpenAI();
+    this.openai = openaiClient ?? new OpenAI(getOpenAIClientOptions());
     this.instructions = INSTRUCTIONS;
   }
 
@@ -337,6 +341,7 @@ export class OpenAIComputerStreamer
     props: ComputerInteractionStreamerFacadeStreamProps
   ): AsyncGenerator<SSEEvent> {
     const { messages, signal } = props;
+    const model = getAIModel();
     const traceId = `openai-${Date.now()}-${Math.random()
       .toString(36)
       .slice(2, 8)}`;
@@ -350,7 +355,7 @@ export class OpenAIComputerStreamer
 
       logDebug("OPENAI_COMPUTER_STREAM_START", {
         traceId,
-        model: OPENAI_MODEL,
+        model,
         resolution: this.resolution,
         message_count: messages.length,
         last_user_message_preview:
@@ -361,7 +366,7 @@ export class OpenAIComputerStreamer
       });
 
       let response = await this.openai.responses.create({
-        model: OPENAI_MODEL,
+        model,
         tools: [computerTool],
         input: [...(messages as ResponseInput)],
         truncation: "auto",
@@ -406,6 +411,9 @@ export class OpenAIComputerStreamer
         });
 
         if (computerCalls.length === 0) {
+          if (!response.output_text?.trim()) {
+            throw new Error("AI response did not include text or actions");
+          }
           logDebug("OPENAI_RESPONSE_FINAL", {
             traceId,
             turnIndex,
@@ -579,7 +587,7 @@ export class OpenAIComputerStreamer
         });
 
         response = await this.openai.responses.create({
-          model: OPENAI_MODEL,
+          model,
           previous_response_id: response.id,
           instructions: this.instructions,
           tools: [computerTool],

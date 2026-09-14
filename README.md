@@ -70,6 +70,20 @@ E2B_API_KEY=your_e2b_api_key
 OPENAI_API_KEY=your_openai_api_key
 ```
 
+To route the same AI workflow through a LiteLLM proxy instead:
+
+```env
+AI_PROVIDER=litellm
+LITELLM_API_KEY=your_proxy_key
+LITELLM_BASE_URL=http://localhost:4000/v1
+LITELLM_MODEL=your_proxy_model_alias
+```
+
+`LITELLM_BASE_URL` defaults to `http://localhost:4000/v1`. The OpenAI setup
+remains the default when `AI_PROVIDER` is unset. The configured proxy alias
+must support the OpenAI Responses API and the request tools used by Surf.
+Provider-specific tool formats that are not OpenAI-compatible may not work.
+
 4. **Start the development server**
 ```bash
 npm run dev
