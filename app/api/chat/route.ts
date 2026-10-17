@@ -5,6 +5,7 @@ import {
   createStreamingResponse,
 } from "@/lib/streaming";
 import { SANDBOX_TIMEOUT_MS } from "@/lib/config";
+import { getSandboxResolution } from "@/lib/resolution";
 import { OpenAIComputerStreamer } from "@/lib/streaming/openai";
 import { logError } from "@/lib/logger";
 
@@ -24,6 +25,11 @@ export async function POST(request: Request) {
     resolution,
   } = await request.json();
 
+  // Never trust the client-provided resolution as-is: it is derived from the
+  // browser viewport, and small breakpoints (e.g. mobile) would create a
+  // desktop too small for the agent to operate reliably
+  const sandboxResolution = getSandboxResolution(resolution);
+
   const apiKey = process.env.E2B_API_KEY;
 
   if (!apiKey) {
@@ -37,7 +43,7 @@ export async function POST(request: Request) {
   try {
     if (!activeSandboxId) {
       const newSandbox = await Sandbox.create({
-        resolution,
+        resolution: sandboxResolution,
         dpi: 96,
         timeoutMs: SANDBOX_TIMEOUT_MS,
       });
@@ -59,7 +65,7 @@ export async function POST(request: Request) {
 
     try {
       const streamer: ComputerInteractionStreamerFacade =
-        new OpenAIComputerStreamer(desktop, resolution);
+        new OpenAIComputerStreamer(desktop, sandboxResolution);
 
       if (!sandboxId && activeSandboxId && vncUrl) {
         async function* stream(): AsyncGenerator<SSEEvent> {
